@@ -1,6 +1,7 @@
 __author__ = 'fajri'
 
 import copy, math
+from ctypes import pointer
 import operator
 import numpy as np
 import random
@@ -13,28 +14,41 @@ from models.metric import Metric
 from modules.embedding import Embedding
 from modules.layer import *
 
+from models.sa_lm import SelfAttention, DocSelfAttention
+from models.WordEncoder_lm import WordEncoder
+
+device = 'cpu'
+
 class MainArchitecture(nn.Module):
-    def __init__(self, vocab, config, embedd_word=None, embedd_tag=None, embedd_etype=None):
+    def __init__(self, vocab, config, embedd_etype=None):
         super(MainArchitecture, self).__init__()
         random.seed(config.seed)
+
+        self.edu_size = 0
+        self.batch_size = 0
+
+        word_encoder_conf = {'encoder':config.word_embedding}
+        self.word_encoder = WordEncoder(word_encoder_conf)
         
-        num_embedding_word = vocab.word_alpha.size()
-        num_embedding_tag = vocab.tag_alpha.size()
+        # num_embedding_word = vocab.word_alpha.size()
+        # num_embedding_tag = vocab.tag_alpha.size()
         num_embedding_etype = vocab.etype_alpha.size()
-        self.word_embedd = Embedding(num_embedding_word, config.word_dim, embedd_word)
-        self.tag_embedd = Embedding(num_embedding_tag, config.tag_dim, embedd_tag)
+        # self.word_embedd = Embedding(num_embedding_word, config.word_dim, embedd_word)
+        # self.tag_embedd = Embedding(num_embedding_tag, config.tag_dim, embedd_tag)
         self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
         
         self.config = config
         self.vocab = vocab
 
-        dim_enc1 = config.word_dim + config.tag_dim
-        dim_enc2 = config.syntax_dim
-        dim_enc3 = config.hidden_size * 4 + config.etype_dim
+        self.dim_enc1 = config.word_dim 
+        # self.dim_enc3 = config.hidden_size * 4 + config.etype_dim
 
-        self.rnn_word_tag = MyLSTM(input_size=dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
-        self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
-        self.rnn_edu = MyLSTM(input_size=dim_enc3, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        self.word_sa = SelfAttention(self.dim_enc1,config.hidden_size*2)
+        self.doc_sa = DocSelfAttention(self.dim_enc1,config.hidden_size*2)
+
+        # self.rnn_word_tag = MyLSTM(input_size=dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        # self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        # self.rnn_edu = MyLSTM(input_size=dim_enc3, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
 
         self.dropout_in = nn.Dropout(p=config.drop_prob)
         self.dropout_out = nn.Dropout(p=config.drop_prob)
@@ -58,17 +72,17 @@ class MainArchitecture(nn.Module):
         self.epoch = 0
 
     def run_rnn_word_tag(self, input_word, input_tag, word_mask):
-        word = self.word_embedd(input_word)
-        tag = self.tag_embedd(input_tag)
+        word = self.word_embedd(input_word) # input id , bs, num_sentence, num_word
+        tag = self.tag_embedd(input_tag)    # input id , bs, num_sentence, num_word
         word = self.dropout_in(word)
         tag = self.dropout_in(tag)
         
         # apply rnn over EDU
         tensor = torch.cat([word, tag], dim=-1)
-        batch_size, edu_size, word_in_edu, hidden_size = tensor.shape
+        batch_size, edu_size, word_in_edu, hidden_size = tensor.shape # hidden_size 400
         tensor = tensor.view(batch_size * edu_size, word_in_edu, hidden_size)
         word_mask = word_mask.view(batch_size * edu_size, word_in_edu)
-        tensor, hn = self.rnn_word_tag(tensor, word_mask, None)
+        tensor, hn = self.rnn_word_tag(tensor, word_mask, None) # hidden_size 512
         
         tensor = tensor.transpose(0,1).contiguous()
         tensor = tensor.view(batch_size, edu_size, word_in_edu, -1)
@@ -120,10 +134,27 @@ class MainArchitecture(nn.Module):
         sent_scores = sent_scores.clone() * segment_mask
         return sent_scores, output * segment_mask.unsqueeze(2)
 
-    def forward_all(self, input_word, input_tag, input_etype, edu_mask, word_mask, word_denominator, syntax):
-        word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask) # bs, edu, word, dim
-        syntax_output = self.run_rnn_syntax(syntax, word_mask) # bs, edu, word, dim
-        tensor = self.run_rnn_edu(word_tag_output, syntax_output, word_denominator, input_etype, edu_mask) # bs, edu, dim
+    def forward_all(self, bacthed_tokens, word_mask, input_etype, edu_mask, word_denominator):
+        # word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask)
+        # syntax_output = self.run_rnn_syntax(syntax, word_mask)
+        # tensor = self.run_rnn_edu(word_tag_output, syntax_output, word_denominator, input_etype, edu_mask) 
+
+        self.batch_size, self.edu_size, num_word = word_mask.shape
+        word = self.word_encoder(bacthed_tokens)
+
+        word_holder = torch.zeros((self.batch_size,self.edu_size,num_word,self.dim_enc1))
+        for i in range(self.batch_size):
+            pointer_v = 0
+            for j in range(self.edu_size):
+                word_holder[i,j,0:int(word_denominator[i,j]),:] = word[i,pointer_v:pointer_v+int(word_denominator[i,j]),:]
+                pointer_v = pointer_v + int(word_denominator[i,j])
+        word_holder = word_holder.to(device)
+
+        word_weighted = self.word_sa(word_holder,word_mask).view(self.batch_size, self.edu_size, -1)
+
+        tensor = self.doc_sa.forward(word_holder, word_weighted, word_mask)
+        tensor = tensor.view(self.batch_size, self.edu_size, -1)
+
         return tensor
 
     def update_eval_metric(self, gold_segmentation_index, nuclear_relation, gold_nuclear_relation, len_golds):
@@ -598,9 +629,12 @@ class MainArchitecture(nn.Module):
         # subset_data = edu_words, edu_tags, edu_types, edu_mask, word_mask, len_edus, word_denominator, edu_syntax,
         # gold_nuclear, gold_relation, gold_segmentation, span, len_golds, depth
         self.epoch = epoch
-        words, tags, etypes, edu_mask, word_mask, len_edus, word_denominator, syntax, \
-            gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, span, len_golds, depth = subset_data
-        encoder_output = self.forward_all(words, tags, etypes, edu_mask, word_mask, word_denominator, syntax)
+        # words, tags, etypes, edu_mask, word_mask, len_edus, word_denominator, syntax, \
+        #     gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, span, len_golds, depth = subset_data
+        _, _, etypes, edu_mask, word_mask, len_edus, word_denominator, _, gold_nuclear, gold_relation, \
+            gold_nuclear_relation, gold_segmentation, span, len_golds, depth, bacthed_tokens = subset_data
+        # print('subset_data',subset_data)
+        encoder_output = self.forward_all(bacthed_tokens, word_mask, etypes, edu_mask, word_denominator)
         if self.training:
             if self.config.flag_oracle:
                 cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)

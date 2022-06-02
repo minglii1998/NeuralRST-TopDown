@@ -4,12 +4,14 @@ import torch
 from string import digits
 from math import ceil
 
-from in_out.instance import Instance
-from in_out.instance import EDU
-from in_out.instance import SubTree
-from in_out.instance import CResult
-from in_out.instance import SynFeat
+from in_out.instance_lm import Instance
+from in_out.instance_lm import EDU
+from in_out.instance_lm import SubTree
+from in_out.instance_lm import CResult
+from in_out.instance_lm import SynFeat
 from transition.action import CAction
+
+from models.WordEncoder_lm import WordTokenizer
 
 UNK_ID = 0
 PAD_ID_WORD = 1
@@ -45,9 +47,10 @@ def modTupByIndex(tup, index, ins):
 # Output: Object of class Instance, where we have 1) labels for transition-based parser; 
 #         2) labels for top-down parser
 class Reader(object):
-    def __init__(self, file_path, syntax_file_path):
+    def __init__(self, file_path, syntax_file_path, word_embedding):
         self.file_path = file_path
         self.syntax_file_path = syntax_file_path
+        self.word_encoder = WordTokenizer({'encoder':word_embedding})
     
     def parse_tree(self, string_tree, sent_types):
         edus = []
@@ -157,9 +160,9 @@ class Reader(object):
 
     def process_instance(self, subline):
         words = []
-        tags = []
+        # tags = []
         total_words = []
-        total_tags = []
+        # total_tags = []
         gold_tree = ''
         sent_types = []
 
@@ -182,24 +185,41 @@ class Reader(object):
                     print (word_tag_pairs)
 
                 words.append(word.lower())
-                tags.append(tag)
+                # tags.append(tag)
                 total_words.append(word)
-                total_tags.append(tag)
+                # total_tags.append(tag)
             total_words.append(word_tag_pairs[-1])
-            total_tags.append(NULLKEY)
+            # total_tags.append(NULLKEY)
             sent_types.append((start_index, end_index, word_tag_pair))
             start_index = end_index + 1
         edus, gold_actions, result = self.parse_tree(subline[-1], sent_types)
 
+        total_tokens = []
+        total_token_id = []
+        total_token_list = []
+        start_token_idx = 0
+        for edu in edus:
+            tokens, token_list, end_index = edu.tokenize(self.word_encoder, total_words, start_token_idx)
+            total_token_list += token_list
+            total_tokens.append(tokens)
+            total_token_id.append(tokens["input_ids"])
+            start_token_idx = end_index + 1
+            pass
+
+        conbined_tokens = total_tokens[0].copy()
+        conbined_tokens["input_ids"] = torch.cat(total_token_id,dim=1)
+        conbined_tokens["attention_mask"] = torch.ones_like(conbined_tokens["input_ids"]).int()
+
+        total_words = total_token_list
         edu_size = len(edus)
         total_word_size = len(total_words)
-        total_tag_size = len(total_tags)
+        # total_tag_size = len(total_tags)
         type_size = len(sent_types)
         word_size = len(words)
         
         # Check word and tag num
-        assert(total_tag_size == total_word_size)
-        assert(word_size + type_size == total_tag_size)
+        # assert(total_tag_size == total_word_size)
+        # assert(word_size + type_size == total_tag_size)
         
         sum = 0
         # Check edu
@@ -209,12 +229,14 @@ class Reader(object):
             if (i < edu_size - 1):
                 assert(edus[i].end_index + 1 == edus[i+1].start_index)
             for j in range(edus[i].start_index, edus[i].end_index + 1):
-                if total_tags[j] != NULLKEY:
-                    edus[i].words.append(total_words[j].lower())
-                    edus[i].tags.append(total_tags[j])
-                else:
-                    sum+=1
-            assert(len(edus[i].words) == len(edus[i].tags))
+                edus[i].words.append(total_words[j])
+                # if total_tags[j] != NULLKEY:
+                #     edus[i].words.append(total_words[j].lower())
+                #     edus[i].tags.append(total_tags[j])
+                # else:
+                #     sum+=1
+            # assert(len(edus[i].words) == len(edus[i].tags))
+            assert(len(edus[i].words) == len(edus[i].token_list))
             sum += len(edus[i].words)
         
         #Check subtree
@@ -223,22 +245,31 @@ class Reader(object):
         for i in range(subtree_size):
             assert(result.subtrees[i].relation != NULLKEY and result.subtrees[i].nuclear != NULLKEY)
 
-        instance = Instance(total_words, total_tags, edus, gold_actions, result)
-        return instance
+        instance = Instance(total_words, edus, gold_actions, result)
+        return instance, conbined_tokens
 
     def read_main_data(self):
         instances = []
+        tokens_all = []
         f = open(self.file_path, 'r')
         subline = []
         for line in f.readlines():
             line = line.strip()
             if line == '':
-                instance = self.process_instance(subline)
+                instance, tokens_doc = self.process_instance(subline)
+                if len(instance.edus) < 2:
+                    subline = []
+                    continue
                 instances.append(instance)
+                tokens_all.append(tokens_doc)
                 subline = []
             else:
                subline.append(line)
-        return np.array(instances)
+        instances = np.array(instances)
+        assert(len(instances)==len(tokens_all))
+        for i in range(len(instances)):
+            instances[i].tokens = tokens_all[i]
+        return instances
     
     def read_syntax_feature(self, instances):
         file1 = self.syntax_file_path + '/arc_dep'
@@ -313,15 +344,7 @@ class Reader(object):
                         inst_idx += 1
         return instances
 
-    def check_edu_num(self,instances):
-        for i in range(len(instances)-1,-1,-1):
-            if len(instances[i].edus) < 2:
-                instances = np.delete(instances,i,0)
-        return instances
-
     def read_data(self):
         instances = self.read_main_data()
-        instances = self.read_syntax_feature(instances)
-        instances = self.check_edu_num(instances)
-
+        # instances = self.read_syntax_feature(instances)
         return instances

@@ -35,8 +35,8 @@ def create_alphabet(instances, alphabet_directory, logger):
     word_size = 0
     gold_size = 0
         
-    word_stat = {}
-    tag_stat = {}
+    # word_stat = {}
+    # tag_stat = {}
     gold_action_stat = {}
     action_label_stat = {}
     etype_stat = {}
@@ -47,11 +47,11 @@ def create_alphabet(instances, alphabet_directory, logger):
     if not os.path.isdir(alphabet_directory):
         print("Creating Alphabets")
         for instance in instances:
-            for i in range(len(instance.total_words)):
-                word = lower_with_digit_transform(instance.total_words[i].strip())
-                tag = instance.total_tags[i]
-                word_stat[word] = word_stat.get(word, 0) + 1
-                tag_stat[tag] = tag_stat.get(tag, 0) + 1
+            # for i in range(len(instance.total_words)):
+            #     word = lower_with_digit_transform(instance.total_words[i].strip())
+            #     tag = instance.total_tags[i]
+            #     word_stat[word] = word_stat.get(word, 0) + 1
+            #     tag_stat[tag] = tag_stat.get(tag, 0) + 1
 
             for action in instance.gold_actions:
                 if (not action.is_shift() and not action.is_finish()):
@@ -68,8 +68,8 @@ def create_alphabet(instances, alphabet_directory, logger):
                 key = g.nuclear[k] + ' - ' + g.relation[k]
                 nuclear_relation_stat[key] = nuclear_relation_stat.get(key, 0) + 1
 
-        word_alpha = Alphabet(word_stat, 'word_alpha')
-        tag_alpha = Alphabet(tag_stat, 'tag_alpha')
+        # word_alpha = Alphabet(word_stat, 'word_alpha')
+        # tag_alpha = Alphabet(tag_stat, 'tag_alpha')
         gold_action_alpha = Alphabet(gold_action_stat, 'gold_action_alpha', for_label_index=True)
         action_label_alpha = Alphabet(action_label_stat, 'action_label_alpha', for_label_index=True)
         relation_alpha = Alphabet(relation_stat, 'relation_alpha', for_label_index=True)
@@ -77,8 +77,8 @@ def create_alphabet(instances, alphabet_directory, logger):
         nuclear_relation_alpha = Alphabet(nuclear_relation_stat, 'nuclear_relation_alpha', for_label_index=True)
         etype_alpha = Alphabet(etype_stat, 'etype_alpha')
 
-        word_alpha.save(alphabet_directory)
-        tag_alpha.save(alphabet_directory)
+        # word_alpha.save(alphabet_directory)
+        # tag_alpha.save(alphabet_directory)
         gold_action_alpha.save(alphabet_directory)
         action_label_alpha.save(alphabet_directory)
         relation_alpha.save(alphabet_directory)
@@ -87,8 +87,8 @@ def create_alphabet(instances, alphabet_directory, logger):
         etype_alpha.save(alphabet_directory)
     else:
         logger.info("The path exist, loading Alphabets for experiment directory")
-        word_alpha = Alphabet(word_stat, 'word_alpha')
-        tag_alpha = Alphabet(tag_stat, 'tag_alpha')
+        # word_alpha = Alphabet(word_stat, 'word_alpha')
+        # tag_alpha = Alphabet(tag_stat, 'tag_alpha')
         gold_action_alpha = Alphabet(gold_action_stat, 'gold_action_alpha')
         action_label_alpha = Alphabet(action_label_stat, 'action_label_alpha')
         relation_alpha = Alphabet(relation_stat, 'relation_alpha')
@@ -96,8 +96,8 @@ def create_alphabet(instances, alphabet_directory, logger):
         nuclear_relation_alpha = Alphabet(nuclear_relation_stat, 'nuclear_relation_alpha')
         etype_alpha = Alphabet(etype_stat, 'etype_alpha')
         
-        word_alpha.load(alphabet_directory)
-        tag_alpha.load(alphabet_directory)
+        # word_alpha.load(alphabet_directory)
+        # tag_alpha.load(alphabet_directory)
         gold_action_alpha.load(alphabet_directory, for_label_index=True)
         action_label_alpha.load(alphabet_directory, for_label_index=True)
         relation_alpha.load(alphabet_directory, for_label_index=True)
@@ -105,15 +105,15 @@ def create_alphabet(instances, alphabet_directory, logger):
         nuclear_relation_alpha.load(alphabet_directory, for_label_index=True)
         etype_alpha.load(alphabet_directory)
 
-    logger.info("Word alphabet size: " + str(word_alpha.size()))
-    logger.info("Tag alphabet size: " + str(tag_alpha.size()))
+    # logger.info("Word alphabet size: " + str(word_alpha.size()))
+    # logger.info("Tag alphabet size: " + str(tag_alpha.size()))
     logger.info("Gold action alphabet size: " + str(gold_action_alpha.size()))
     logger.info("Action Label alphabet size: " + str(action_label_alpha.size()))
     logger.info("Relation alphabet size: " + str(relation_alpha.size()))
     logger.info("Nuclear alphabet size: " + str(nuclear_alpha.size()))
     logger.info("Nuclear - Relation alphabet size: " + str(nuclear_relation_alpha.size()))
     logger.info("Etype alphabet size: " + str(etype_alpha.size()))
-    return word_alpha, tag_alpha, gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha, etype_alpha
+    return gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha, etype_alpha
 
 
 def validate_gold_actions(instances, maxStateSize):
@@ -181,12 +181,12 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
             if edu_len > max_edu_len: max_edu_len = edu_len
     if max_edu_len > config.max_sent_size: max_edu_len = config.max_sent_size
     
-    edu_words = Variable(torch.LongTensor(batch_size, max_edu_num, max_edu_len).zero_(), requires_grad=False)
+    # edu_words = Variable(torch.LongTensor(batch_size, max_edu_num, max_edu_len).zero_(), requires_grad=False)
     edu_types = Variable(torch.LongTensor(batch_size, max_edu_num).zero_(), requires_grad=False)
-    edu_syntax = np.zeros([batch_size, max_edu_num, max_edu_len, config.syntax_dim], dtype=np.float32)
+    # edu_syntax = np.zeros([batch_size, max_edu_num, max_edu_len, config.syntax_dim], dtype=np.float32)
      
     word_mask = Variable(torch.Tensor(batch_size, max_edu_num, max_edu_len).zero_(), requires_grad=False)
-    edu_tags = Variable(torch.LongTensor(batch_size, max_edu_num, max_edu_len).zero_(), requires_grad=False)
+    # edu_tags = Variable(torch.LongTensor(batch_size, max_edu_num, max_edu_len).zero_(), requires_grad=False)
     edu_mask = Variable(torch.Tensor(batch_size, max_edu_num).zero_(), requires_grad=False)
     word_denominator = Variable(torch.ones(batch_size, max_edu_num).type(torch.FloatTensor) * -1, requires_grad=False)
     len_edus = np.zeros([batch_size], dtype=np.int64)
@@ -197,9 +197,12 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
     gold_span = []
     gold_depth = []
 
+    bacthed_token_ids = []
+
     len_golds = np.zeros([batch_size], dtype=np.int64)
 
     for idx in range(batch_size):
+        bacthed_token_ids.append(batch[idx].tokens['input_ids'])
         for idy in range(len(batch[idx].edus)):
             len_edus[idx] = len(batch[idx].edus)
             edu = batch[idx].edus[idy]
@@ -208,11 +211,11 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
             edu_len = min(len(edu.words), max_edu_len)
             word_denominator[idx, idy] = edu_len
             for idz in range(edu_len):
-                word = edu.words[idz]
-                tag = edu.tags[idz]
-                edu_words[idx, idy, idz] = vocab.word_alpha.word2id(word)
-                edu_tags[idx, idy, idz] = vocab.tag_alpha.word2id(tag)
-                edu_syntax[idx, idy, idz] = edu.syntax_features[idz]
+                # word = edu.words[idz]
+                # tag = edu.tags[idz]
+                # edu_words[idx, idy, idz] = vocab.word_alpha.word2id(word)
+                # edu_tags[idx, idy, idz] = vocab.tag_alpha.word2id(tag)
+                # edu_syntax[idx, idy, idz] = edu.syntax_features[idz]
                 word_mask[idx, idy, idz] = 1
     
         if is_training:
@@ -228,24 +231,32 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
             
             len_golds[idx] = len(batch[idx].gold_top_down.edu_span)
 
+    if batch_size == 1:
+        bacthed_tokens = batch[0].tokens
+    else:
+        bacthed_tokens = batch[0].tokens.copy()
+        bacthed_tokens['input_ids'] = torch.cat(bacthed_token_ids,dim=0)
+        bacthed_tokens['attention_mask'] = torch.ones_like(bacthed_tokens['input_ids']).int()
+
     span = copy.deepcopy(gold_span)
     depth = copy.deepcopy(gold_depth)
-    edu_syntax = Variable(torch.from_numpy(edu_syntax), volatile=False, requires_grad=False)
+    # edu_syntax = Variable(torch.from_numpy(edu_syntax), volatile=False, requires_grad=False)
     if config.use_gpu:
-        edu_words = edu_words.to(device)
-        edu_tags = edu_tags.to(device)
+        # edu_words = edu_words.to(device)
+        # edu_tags = edu_tags.to(device)
         edu_types = edu_types.to(device)
         edu_mask = edu_mask.to(device)
         word_mask = word_mask.to(device)
         word_denominator = word_denominator.to(device)
-        edu_syntax = edu_syntax.to(device)
+        # edu_syntax = edu_syntax.to(device)
         gold_nuclear = gold_nuclear.to(device)
         gold_relation = gold_relation.to(device)
         gold_nuclear_relation = gold_nuclear_relation.to(device)
         gold_segmentation = gold_segmentation.to(device)
+        bacthed_tokens = bacthed_tokens.to(device)
 
-    return edu_words, edu_tags, edu_types, edu_mask, word_mask, len_edus, \
-            word_denominator, edu_syntax, gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, \
-            span, len_golds, depth
+    return None, None, edu_types, edu_mask, word_mask, len_edus, \
+            word_denominator, None, gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, \
+            span, len_golds, depth, bacthed_tokens
 
  

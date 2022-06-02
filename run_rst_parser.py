@@ -18,6 +18,8 @@ from models.config import Config
 from models.architecture import MainArchitecture
 from train_rst_parser import predict
 
+device = 'cpu'
+
 def main():
     args_parser = argparse.ArgumentParser()
     args_parser.add_argument('--config_path', required=True)
@@ -33,7 +35,7 @@ def main():
     network.load_state_dict(torch.load(config.model_name))
 
     if config.use_gpu:
-        network = network.cuda()
+        network = network.to(device)
     network.eval()
     
     logger.info('Reading dev instance, and predict...')

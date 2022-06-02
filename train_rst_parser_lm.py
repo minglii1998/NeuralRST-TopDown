@@ -12,17 +12,17 @@ import torch
 from torch.optim import Adam, SGD, Adamax
 from torch.nn.utils import clip_grad_norm_
 
-from in_out.reader import Reader
+from in_out.reader_lm import Reader
 from in_out.util import load_embedding_dict, get_logger
-from in_out.preprocess import construct_embedding_table
-from in_out.preprocess import create_alphabet
-from in_out.preprocess import validate_gold_actions, validate_gold_top_down
-from in_out.preprocess import batch_data_variable
+from in_out.preprocess_lm import construct_embedding_table
+from in_out.preprocess_lm import create_alphabet
+from in_out.preprocess_lm import validate_gold_actions, validate_gold_top_down
+from in_out.preprocess_lm import batch_data_variable
 from models.metric import Metric
-from models.vocab import Vocab
+from models.vocab_lm import Vocab
 from models.config import Config
-# from models.architecture_sa import MainArchitecture
-from models.architecture import MainArchitecture
+# from models.architecture_sa_lm import MainArchitecture
+from models.architecture_lm import MainArchitecture
 
 
 from torch.utils.tensorboard import SummaryWriter  
@@ -99,7 +99,7 @@ def get_test_loss(network, instances, vocab, config):
 def main():
     start_a = time.time()
     args_parser = argparse.ArgumentParser()
-    args_parser.add_argument('--word_embedding', default='glove', help='Embedding for words')
+    args_parser.add_argument('--word_embedding', default='t5', help='Embedding for words')
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
     args_parser.add_argument('--train', default=main_path+'NeuralRST/rst.train312')  
     args_parser.add_argument('--test', default=main_path+'NeuralRST/rst.test38')  
@@ -112,7 +112,7 @@ def main():
     args_parser.add_argument('--model_name', default='network.pt')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
-    args_parser.add_argument('--word_dim', type=int, default=200, help='Dimension of word embeddings')
+    args_parser.add_argument('--word_dim', type=int, default=768, help='Dimension of word embeddings')
     args_parser.add_argument('--tag_dim', type=int, default=200, help='Dimension of POS tag embeddings')
     args_parser.add_argument('--etype_dim', type=int, default=100, help='Dimension of Etype embeddings')
     args_parser.add_argument('--syntax_dim', type=int, default=1200, help='Dimension of Sytax embeddings')
@@ -129,7 +129,7 @@ def main():
     args_parser.add_argument('--drop_prob', type=float, default=0.5, help='default drop_prob')
     args_parser.add_argument('--num_layers', type=int, default=1, help='number of RNN layers')
     
-    args_parser.add_argument('--batch_size', type=int, default=2, help='Number of sentences in each batch')
+    args_parser.add_argument('--batch_size', type=int, default=1, help='Number of sentences in each batch')
     args_parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     args_parser.add_argument('--ada_eps', type=float, default=1e-6, help='epsilon for adam or adamax')
     args_parser.add_argument('--opt', default='adam', help='Optimization, choose between adam, sgd, and adamax')
@@ -177,20 +177,20 @@ def main():
         logger.info("This is using STATIC oracle")
         model_name = 'static_' + config.model_name
     
-    logger.info("Load word embedding, will take 2 minutes")
-    pretrained_embed, word_dim = load_embedding_dict(config.word_embedding, config.word_embedding_file)
-    assert (word_dim == config.word_dim)
+    # logger.info("Load word embedding, will take 2 minutes")
+    # pretrained_embed, word_dim = load_embedding_dict(config.word_embedding, config.word_embedding_file)
+    # assert (word_dim == config.word_dim)
 
     logger.info("Reading Train start")
-    reader = Reader(config.train_path, config.train_syn_feat_path)
-    train_instances  = reader.read_data()
+    reader = Reader(config.train_path, config.train_syn_feat_path, config.word_embedding)
+    train_instances = reader.read_data()
     logger.info('Finish reading training instances: ' + str(len(train_instances)))
     logger.info('Max sentence size: ' + str(config.max_sent_size))
 
     logger.info('Creating Alphabet....')
     config.model_name = os.path.join(config.model_path, config.model_name)
-    word_alpha, tag_alpha, gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha, etype_alpha = create_alphabet(train_instances, config.alphabet_path, logger)
-    vocab = Vocab(word_alpha, tag_alpha, etype_alpha, gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha)
+    gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha, etype_alpha = create_alphabet(train_instances, config.alphabet_path, logger)
+    vocab = Vocab(etype_alpha, gold_action_alpha, action_label_alpha, relation_alpha, nuclear_alpha, nuclear_relation_alpha)
     set_label_action(action_label_alpha.alpha2id, train_instances) 
 
     # logger.info('Checking Gold Actions for transition-based parser....')
@@ -198,27 +198,27 @@ def main():
     logger.info('Checking Gold Labels for top-down parser....')
     validate_gold_top_down(train_instances)
     
-    word_table = construct_embedding_table(word_alpha, config.word_dim, config.freeze, pretrained_embed)
-    tag_table = construct_embedding_table(tag_alpha, config.tag_dim, config.freeze)
+    # word_table = construct_embedding_table(word_alpha, config.word_dim, config.freeze, pretrained_embed)
+    # tag_table = construct_embedding_table(tag_alpha, config.tag_dim, config.freeze)
     etype_table = construct_embedding_table(etype_alpha, config.etype_dim, config.freeze)
     
     logger.info("Finish reading train data by:" + str(round(time.time() - start_a, 2)) + 'sec')
 
     # DEV data processing
-    reader = Reader(config.dev_path, config.dev_syn_feat_path)
+    reader = Reader(config.dev_path, config.dev_syn_feat_path, config.word_embedding)
     dev_instances  = reader.read_data()
     logger.info('Finish reading dev instances')
     
     # TEST data processing
-    reader = Reader(config.test_path, config.test_syn_feat_path)
+    reader = Reader(config.test_path, config.test_syn_feat_path, config.word_embedding)
     test_instances  = reader.read_data()
     logger.info('Finish reading test instances')
 
     torch.set_num_threads(4)
-    network = MainArchitecture(vocab, config, word_table, tag_table, etype_table) 
+    network = MainArchitecture(vocab, config, etype_table) 
    
-    if config.freeze:
-        network.word_embedd.freeze()
+    # if config.freeze:
+    #     network.word_embedd.freeze()
     if device == 'cpu':
         config.use_gpu = False
     if config.use_gpu:
@@ -275,7 +275,7 @@ def main():
             logger.info("In this epoch, dynamic oracle is activated!")
             config.flag_oracle = True
         
-        permutation = torch.randperm(total_data).long()
+        permutation = torch.randperm(total_data).long()  
         network.metric_span.reset()
         network.metric_nuclear_relation.reset()
         time_start = datetime.now()

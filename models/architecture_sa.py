@@ -13,10 +13,17 @@ from models.metric import Metric
 from modules.embedding import Embedding
 from modules.layer import *
 
+from models.sa import SelfAttention, DocSelfAttention
+
+device = 'cpu'
+
 class MainArchitecture(nn.Module):
-    def __init__(self, vocab, config, embedd_word=None, embedd_tag=None, embedd_etype=None):
+    def __init__(self, vocab, config, embedd_word, embedd_tag, embedd_etype=None):
         super(MainArchitecture, self).__init__()
         random.seed(config.seed)
+
+        self.edu_size = 0
+        self.batch_size = 0
         
         num_embedding_word = vocab.word_alpha.size()
         num_embedding_tag = vocab.tag_alpha.size()
@@ -31,6 +38,10 @@ class MainArchitecture(nn.Module):
         dim_enc1 = config.word_dim + config.tag_dim
         dim_enc2 = config.syntax_dim
         dim_enc3 = config.hidden_size * 4 + config.etype_dim
+
+        self.word_sa = SelfAttention(dim_enc1,config.hidden_size*2)
+        self.synt_sa = SelfAttention(dim_enc2,config.hidden_size*2)
+        self.doc_sa = DocSelfAttention(dim_enc1+dim_enc2,config.hidden_size*2)
 
         self.rnn_word_tag = MyLSTM(input_size=dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
@@ -58,17 +69,17 @@ class MainArchitecture(nn.Module):
         self.epoch = 0
 
     def run_rnn_word_tag(self, input_word, input_tag, word_mask):
-        word = self.word_embedd(input_word)
-        tag = self.tag_embedd(input_tag)
+        word = self.word_embedd(input_word) # input id , bs, num_sentence, num_word
+        tag = self.tag_embedd(input_tag)    # input id , bs, num_sentence, num_word
         word = self.dropout_in(word)
         tag = self.dropout_in(tag)
         
         # apply rnn over EDU
         tensor = torch.cat([word, tag], dim=-1)
-        batch_size, edu_size, word_in_edu, hidden_size = tensor.shape
+        batch_size, edu_size, word_in_edu, hidden_size = tensor.shape # hidden_size 400
         tensor = tensor.view(batch_size * edu_size, word_in_edu, hidden_size)
         word_mask = word_mask.view(batch_size * edu_size, word_in_edu)
-        tensor, hn = self.rnn_word_tag(tensor, word_mask, None)
+        tensor, hn = self.rnn_word_tag(tensor, word_mask, None) # hidden_size 512
         
         tensor = tensor.transpose(0,1).contiguous()
         tensor = tensor.view(batch_size, edu_size, word_in_edu, -1)
@@ -121,9 +132,18 @@ class MainArchitecture(nn.Module):
         return sent_scores, output * segment_mask.unsqueeze(2)
 
     def forward_all(self, input_word, input_tag, input_etype, edu_mask, word_mask, word_denominator, syntax):
-        word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask) # bs, edu, word, dim
-        syntax_output = self.run_rnn_syntax(syntax, word_mask) # bs, edu, word, dim
-        tensor = self.run_rnn_edu(word_tag_output, syntax_output, word_denominator, input_etype, edu_mask) # bs, edu, dim
+        # word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask)
+        # syntax_output = self.run_rnn_syntax(syntax, word_mask)
+        # tensor = self.run_rnn_edu(word_tag_output, syntax_output, word_denominator, input_etype, edu_mask) 
+
+        self.batch_size, self.edu_size, _ = input_word.shape
+
+        word = self.word_embedd(input_word) # input id , bs, num_sentence, num_word
+        tag = self.tag_embedd(input_tag)    # input id , bs, num_sentence, num_word
+        tensor = torch.cat([word, tag], dim=-1)
+        tensor = self.doc_sa.forward(tensor, self.word_sa(tensor,word_mask).view(self.batch_size, self.edu_size, -1), \
+            syntax, self.synt_sa(syntax,word_mask).view(self.batch_size, self.edu_size, -1), word_mask)
+        tensor = tensor.view(self.batch_size, self.edu_size, -1)
         return tensor
 
     def update_eval_metric(self, gold_segmentation_index, nuclear_relation, gold_nuclear_relation, len_golds):
