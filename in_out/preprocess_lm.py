@@ -10,7 +10,7 @@ from in_out.util import lower_with_digit_transform
 from transition.state import CState
 from torch.autograd import Variable
 
-device = 'cpu'
+device = 'cuda'
 
 def construct_embedding_table(alpha, hidden_size, freeze, pretrained_embed = None):
     if alpha is None:

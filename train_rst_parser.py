@@ -21,8 +21,8 @@ from in_out.preprocess import batch_data_variable
 from models.metric import Metric
 from models.vocab import Vocab
 from models.config import Config
-# from models.architecture_sa import MainArchitecture
-from models.architecture import MainArchitecture
+from models.architecture_sa import MainArchitecture
+# from models.architecture import MainArchitecture
 
 
 from torch.utils.tensorboard import SummaryWriter  

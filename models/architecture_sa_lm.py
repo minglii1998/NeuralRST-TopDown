@@ -17,7 +17,7 @@ from modules.layer import *
 from models.sa_lm import SelfAttention, DocSelfAttention
 from models.WordEncoder_lm import WordEncoder
 
-device = 'cpu'
+device = 'cuda'
 
 class MainArchitecture(nn.Module):
     def __init__(self, vocab, config, embedd_etype=None):

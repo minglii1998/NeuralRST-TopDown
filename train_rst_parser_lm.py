@@ -21,15 +21,15 @@ from in_out.preprocess_lm import batch_data_variable
 from models.metric import Metric
 from models.vocab_lm import Vocab
 from models.config import Config
-# from models.architecture_sa_lm import MainArchitecture
-from models.architecture_lm import MainArchitecture
+from models.architecture_sa_lm import MainArchitecture
+# from models.architecture_lm import MainArchitecture
 
 
 from torch.utils.tensorboard import SummaryWriter  
 
 UNK_ID=0
 main_path=''
-device = 'cpu'
+device = 'cuda'
 
 def set_label_action(dictionary, instances):
     for i in range(len(instances)):
@@ -100,22 +100,16 @@ def main():
     start_a = time.time()
     args_parser = argparse.ArgumentParser()
     args_parser.add_argument('--word_embedding', default='t5', help='Embedding for words')
-    args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
     args_parser.add_argument('--train', default=main_path+'NeuralRST/rst.train312')  
     args_parser.add_argument('--test', default=main_path+'NeuralRST/rst.test38')  
     args_parser.add_argument('--dev', default=main_path+'NeuralRST/rst.dev35')  
-    args_parser.add_argument('--train_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/train.conll.dump.results')  
-    args_parser.add_argument('--test_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/test.conll.dump.results')  
-    args_parser.add_argument('--dev_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/dev.conll.dump.results')  
     args_parser.add_argument('--model_path', default=main_path+'logs')
     args_parser.add_argument('--experiment', help='Name of your experiment', type=str, default='exp_try')
     args_parser.add_argument('--model_name', default='network.pt')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
     args_parser.add_argument('--word_dim', type=int, default=768, help='Dimension of word embeddings')
-    args_parser.add_argument('--tag_dim', type=int, default=200, help='Dimension of POS tag embeddings')
     args_parser.add_argument('--etype_dim', type=int, default=100, help='Dimension of Etype embeddings')
-    args_parser.add_argument('--syntax_dim', type=int, default=1200, help='Dimension of Sytax embeddings')
     args_parser.add_argument('--freeze', default=True, help='frozen the word embedding (disable fine-tuning).')
     
     args_parser.add_argument('--max_sent_size', type=int, default=100, help='maximum word size in 1 edu')
@@ -156,6 +150,14 @@ def main():
     args_parser.add_argument('--depth_alpha', type=float, default=0.0, help='multiplier of loss based on depth of the subtree')
     args_parser.add_argument('--elem_alpha', type=float, default=0.35, help='multiplier of loss based on number of element in a subtree')
     args_parser.add_argument('--seed', type=int, default=999, help='random seed')
+
+    # not used in this language model (lm) version model
+    args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
+    args_parser.add_argument('--train_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/train.conll.dump.results')  
+    args_parser.add_argument('--test_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/test.conll.dump.results')  
+    args_parser.add_argument('--dev_syn_feat', default=main_path+'NeuralRST/SyntaxBiaffine/dev.conll.dump.results') 
+    args_parser.add_argument('--tag_dim', type=int, default=200, help='Dimension of POS tag embeddings')
+    args_parser.add_argument('--syntax_dim', type=int, default=1200, help='Dimension of Sytax embeddings')
 
     args = args_parser.parse_args()
     config = Config(args)
@@ -332,10 +334,10 @@ def main():
         tb_writer.add_scalar('2_evaluating/nuc_rel_loss',nuc_rel_loss,epoch)
         tb_writer.add_scalar('2_evaluating/seg_loss',seg_loss,epoch)
 
-        mean_loss, nuc_rel_loss, seg_loss = get_test_loss(network, test_instances, vocab, config)
-        tb_writer.add_scalar('3_testing/loss',mean_loss,epoch)
-        tb_writer.add_scalar('3_testing/nuc_rel_loss',nuc_rel_loss,epoch)
-        tb_writer.add_scalar('3_testing/seg_loss',seg_loss,epoch)
+        # mean_loss, nuc_rel_loss, seg_loss = get_test_loss(network, test_instances, vocab, config)
+        # tb_writer.add_scalar('3_testing/loss',mean_loss,epoch)
+        # tb_writer.add_scalar('3_testing/nuc_rel_loss',nuc_rel_loss,epoch)
+        # tb_writer.add_scalar('3_testing/seg_loss',seg_loss,epoch)
         
         if best_F < full.get_f_measure():
             best_S = span.get_f_measure(); best_S_ori = span_ori.get_f_measure()
