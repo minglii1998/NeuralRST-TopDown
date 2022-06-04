@@ -381,6 +381,9 @@ def main():
         logger.info('Evaluate TEST:')
         span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori =\
                 predict(network, test_instances, vocab, config, logger)
+
+        torch.cuda.empty_cache()
+
     
 if __name__ == '__main__':
     main()

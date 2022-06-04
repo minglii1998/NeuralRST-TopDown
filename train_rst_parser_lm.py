@@ -153,8 +153,9 @@ def main():
     args_parser.add_argument('--seed', type=int, default=999, help='random seed')
 
     args_parser.add_argument('--model', type=str, default='sa', help='what model to use, sa ori')
-    args_parser.add_argument('--special_tag', type=str, default='', help='special tag for logging')
+    args_parser.add_argument('--special_tag', type=str, default='no_record', help='special tag for logging')
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
+    args_parser.add_argument('--decode_layer', type=str, default='lstm', help='pass of saved embeddings')
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
@@ -357,7 +358,8 @@ def main():
         # START EVALUATING DEV:
         network.eval()
         network.training = False
-        
+
+        torch.cuda.empty_cache()
         logger.info('Evaluate DEV:')
         span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori =\
                 predict(network, dev_instances, vocab, config, logger)
@@ -394,9 +396,12 @@ def main():
             es_counter += 1
         
         # START EVALUATING TEST:
+        torch.cuda.empty_cache()
         logger.info('Evaluate TEST:')
         span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori =\
                 predict(network, test_instances, vocab, config, logger)
-    
+
+        torch.cuda.empty_cache()
+
 if __name__ == '__main__':
     main()

@@ -24,7 +24,8 @@ def get_suffix_without_seed(ver, args):
         dynamic = '.dynamic.'
     else:
         dynamic = '.static.'
-    suffix = ver + '.' + args.model + dynamic + 'bs.' + str(args.batch_size) + args.word_embedding + 'dim.' + str(args.word_dim)
+    suffix = ver + '.' + args.model + dynamic + 'bs.' + str(args.batch_size) + args.word_embedding + 'dim.' + str(args.word_dim) + \
+        args.decode_layer
     
     suffix = suffix + args.special_tag
     
