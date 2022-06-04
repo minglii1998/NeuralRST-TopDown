@@ -93,7 +93,10 @@ class SelfLogger(object):
 
         self.loss_txt_p = osp.join(self.model_seed_dir,'loss_log')
 
-        self.checkpoint_p = osp.join(self.model_seed_dir,'checkpoint','model.pt')
+        self.checkpoint_p = osp.join(self.model_seed_dir,'checkpoint')
+        if not osp.exists(self.checkpoint_p):
+            os.makedirs(self.checkpoint_p)
+        self.checkpoint_f = osp.join(self.checkpoint_p,'model.pt')
 
         print('Logger init completed')
 
@@ -130,4 +133,4 @@ class SelfLogger(object):
                     'epoch': epoch,
                     'model_state_dict': net.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    }, self.checkpoint_p)
+                    }, self.checkpoint_f)
