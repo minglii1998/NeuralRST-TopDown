@@ -594,7 +594,7 @@ class MainArchitecture(nn.Module):
 
     
     # Primary function
-    def loss(self, subset_data, gold_subtrees, epoch=0):
+    def loss(self, subset_data, gold_subtrees, epoch=0, loss_valid=False):
         # subset_data = edu_words, edu_tags, edu_types, edu_mask, word_mask, len_edus, word_denominator, edu_syntax,
         # gold_nuclear, gold_relation, gold_segmentation, span, len_golds, depth
         self.epoch = epoch
@@ -608,6 +608,13 @@ class MainArchitecture(nn.Module):
                 cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
             return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
         else:
+            if loss_valid :
+                if self.config.flag_oracle:
+                    cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                else:
+                    cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
+
             if self.config.beam_search == 1:
                 gs, results = self.decode_testing(encoder_output, span)
             else: #do beam search

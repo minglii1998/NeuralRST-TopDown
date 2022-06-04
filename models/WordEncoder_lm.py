@@ -198,6 +198,7 @@ class WordEncoder(nn.Module):
 
         self.long_out = long_out
         self.num_pad = 0
+        self.word_dim = config['word_dim']
 
         self.encoder_type = config['encoder']
         if self.encoder_type == 'bert':
@@ -222,7 +223,10 @@ class WordEncoder(nn.Module):
         elif self.encoder_type in ['t5']:
             # self.tokenizer = T5Tokenizer.from_pretrained("t5-large",cache_dir="../cache/")
             # self.model =  T5EncoderModel.from_pretrained("t5-large",cache_dir="../cache/")
-            self.model =  T5EncoderModel.from_pretrained("t5-base",cache_dir="../cache/")
+            if self.word_dim == 768:
+                self.model =  T5EncoderModel.from_pretrained("t5-base",cache_dir="../cache/")
+            elif self.word_dim == 1024:
+                self.model =  T5EncoderModel.from_pretrained("t5-large",cache_dir="../cache/")
             self.num_pad = 1
         elif self.encoder_type in ['xlnet']:
             # ignore

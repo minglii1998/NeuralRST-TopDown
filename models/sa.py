@@ -74,7 +74,7 @@ class DocSelfAttention(nn.Module):
             pass
 
         out_holder = out_holder + torch.cat([word_weighted, syn_weighted], dim=-1)
-        out_holder = self.ws3(out_holder)
+        out_holder = F.tanh(self.ws3(self.drop(out_holder)))
 
         return out_holder
 

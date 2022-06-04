@@ -233,6 +233,7 @@ venv.bak/
 
 # Project specific
 logs
+logs_new
 scripts
 # *.png
 *.jpg

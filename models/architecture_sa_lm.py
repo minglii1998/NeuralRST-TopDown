@@ -26,9 +26,11 @@ class MainArchitecture(nn.Module):
 
         self.edu_size = 0
         self.batch_size = 0
+        self.quick_embedding = config.quick_embedding != ''
 
-        word_encoder_conf = {'encoder':config.word_embedding}
-        self.word_encoder = WordEncoder(word_encoder_conf)
+        if not self.quick_embedding:
+            word_encoder_conf = {'encoder':config.word_embedding, 'word_dim':config.word_dim}
+            self.word_encoder = WordEncoder(word_encoder_conf)
         
         # num_embedding_word = vocab.word_alpha.size()
         # num_embedding_tag = vocab.tag_alpha.size()
@@ -134,13 +136,14 @@ class MainArchitecture(nn.Module):
         sent_scores = sent_scores.clone() * segment_mask
         return sent_scores, output * segment_mask.unsqueeze(2)
 
-    def forward_all(self, bacthed_tokens, word_mask, input_etype, edu_mask, word_denominator):
+    def forward_all(self, bacthed_tokens, word_mask, input_etype, edu_mask, word_denominator, word):
         # word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask)
         # syntax_output = self.run_rnn_syntax(syntax, word_mask)
         # tensor = self.run_rnn_edu(word_tag_output, syntax_output, word_denominator, input_etype, edu_mask) 
 
         self.batch_size, self.edu_size, num_word = word_mask.shape
-        word = self.word_encoder(bacthed_tokens)
+        if not self.quick_embedding:
+            word = self.word_encoder(bacthed_tokens)
 
         word_holder = torch.zeros((self.batch_size,self.edu_size,num_word,self.dim_enc1))
         for i in range(self.batch_size):
@@ -625,16 +628,16 @@ class MainArchitecture(nn.Module):
 
     
     # Primary function
-    def loss(self, subset_data, gold_subtrees, epoch=0):
+    def loss(self, subset_data, gold_subtrees, epoch=0, loss_valid=False):
         # subset_data = edu_words, edu_tags, edu_types, edu_mask, word_mask, len_edus, word_denominator, edu_syntax,
         # gold_nuclear, gold_relation, gold_segmentation, span, len_golds, depth
         self.epoch = epoch
         # words, tags, etypes, edu_mask, word_mask, len_edus, word_denominator, syntax, \
         #     gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, span, len_golds, depth = subset_data
         _, _, etypes, edu_mask, word_mask, len_edus, word_denominator, _, gold_nuclear, gold_relation, \
-            gold_nuclear_relation, gold_segmentation, span, len_golds, depth, bacthed_tokens = subset_data
+            gold_nuclear_relation, gold_segmentation, span, len_golds, depth, bacthed_tokens, token_embedding = subset_data
         # print('subset_data',subset_data)
-        encoder_output = self.forward_all(bacthed_tokens, word_mask, etypes, edu_mask, word_denominator)
+        encoder_output = self.forward_all(bacthed_tokens, word_mask, etypes, edu_mask, word_denominator, token_embedding)
         if self.training:
             if self.config.flag_oracle:
                 cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
@@ -642,6 +645,13 @@ class MainArchitecture(nn.Module):
                 cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
             return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
         else:
+            if loss_valid :
+                if self.config.flag_oracle:
+                    cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                else:
+                    cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
+                
             if self.config.beam_search == 1:
                 gs, results = self.decode_testing(encoder_output, span)
             else: #do beam search

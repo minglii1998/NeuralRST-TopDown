@@ -61,16 +61,16 @@ class DocSelfAttention(nn.Module):
             word_all_ = torch.masked_select(word_all[i], mask).view(1,-1, word_dim)
 
             self_attention = word_all_ - word_weighted[i].unsqueeze(1)
-            self_attention1 = F.tanh(self.ws1(self.drop(self_attention)))
-            self_attention2 = self.ws2(self.drop(self_attention1)).squeeze(-1)
-            self_attention = self.softmax(self_attention2)
+            self_attention = F.tanh(self.ws1(self.drop(self_attention)))
+            self_attention = self.ws2(self.drop(self_attention)).squeeze(-1)
+            self_attention = self.softmax(self_attention)
 
             self_attention = torch.sum(word_all_*self_attention.unsqueeze(-1), dim=1)
             out_holder[i] = self_attention
             pass
 
         out_holder = out_holder + word_weighted
-        out_holder = self.ws3(out_holder)
+        out_holder = F.tanh(self.ws3(self.drop(out_holder)))
 
         return out_holder
 
