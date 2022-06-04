@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from allennlp.modules.elmo import Elmo, batch_to_ids
+# from allennlp.modules.elmo import Elmo, batch_to_ids
 
 from transformers import BertTokenizer, BertModel
 from transformers import LongformerTokenizer, LongformerModel
