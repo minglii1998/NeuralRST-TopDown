@@ -7,6 +7,8 @@ import random
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn import TransformerEncoder, TransformerEncoderLayer, MultiheadAttention
+
 from torch.autograd import Variable
 from in_out.instance import CResult, Gold
 from models.metric import Metric
@@ -51,8 +53,22 @@ class MainArchitecture(nn.Module):
         self.dropout_out = nn.Dropout(p=config.drop_prob)
         out_dim1 = config.hidden_size * 2
         out_dim2 = config.hidden_size * 2
+
+        if self.decode_layer == 'lstm':
+            self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        elif self.decode_layer == 'none':
+            self.extra_linear = nn.Linear(out_dim2, config.hidden_size_tagger*2)
+        elif self.decode_layer in ['transformer1','transformer2','transformer4']:
+            self.extra_linear = nn.Linear(out_dim2, config.hidden_size_tagger*2)
+            context_encoders = TransformerEncoderLayer(
+            d_model=config.hidden_size_tagger*2, 
+            nhead=int(self.decode_layer[-1]), 
+            dim_feedforward=config.hidden_size_tagger, 
+            dropout=0.5,
+            batch_first=True)
+            self.transformer_segmentation = TransformerEncoder(context_encoders, 1)
         
-        self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        # self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         self.mlp_seg = NonLinear(config.hidden_size_tagger * 2, config.hidden_size_tagger/2, activation=nn.Tanh())
         
         self.mlp_nuclear_relation = NonLinear(config.hidden_size_tagger * 4, config.hidden_size, activation=nn.Tanh())
@@ -122,8 +138,14 @@ class MainArchitecture(nn.Module):
 
     def run_rnn_segmentation(self, segmented_encoder, segment_mask):
         batch_size, edu_size, hidden_size = segmented_encoder.shape
-        output, hn = self.rnn_segmentation(segmented_encoder, segment_mask, None)
-        output = output.transpose(0,1).contiguous()
+        if self.decode_layer == 'lstm':
+            output, hn = self.rnn_segmentation(segmented_encoder, segment_mask, None)
+            output = output.transpose(0,1).contiguous()
+        elif self.decode_layer == 'none':
+            output = self.extra_linear(segmented_encoder)
+        elif self.decode_layer in ['transformer1','transformer2','transformer4']:
+            output = self.extra_linear(segmented_encoder)
+            output = self.transformer_segmentation(output, None)
         output = self.dropout_out(output)
         
         sent_scores = torch.sum(self.mlp_seg(output), dim=-1).view(batch_size, edu_size)

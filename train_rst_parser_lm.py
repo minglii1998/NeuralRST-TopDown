@@ -155,7 +155,8 @@ def main():
     args_parser.add_argument('--model', type=str, default='sa', help='what model to use, sa ori')
     args_parser.add_argument('--special_tag', type=str, default='no_record', help='special tag for logging')
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
-    args_parser.add_argument('--decode_layer', type=str, default='lstm', help='pass of saved embeddings')
+    args_parser.add_argument('--decode_layer', type=str, default='lstm', help='segmentor type in decoder')
+    args_parser.add_argument('--resume', type=str, default='', help='checkpoint path')
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
@@ -297,8 +298,16 @@ def main():
     best_R = 0; best_R_ori = 0;
     best_F = 0; best_F_ori = 0;
     iteration = -1
+
+    if config.resume == '':
+        start_epo = 0
+    else:
+        checkpoint = torch.load(config.resume)
+        network.load_state_dict(checkpoint['model_state_dict'])
+        optim.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epo = checkpoint['epoch'] + 1
     
-    for epoch in range(0, config.max_iter):
+    for epoch in range(start_epo, config.max_iter):
         logger.info('Epoch %d ' % (epoch))
         logger.info("Current learning rate: %.5f" %(config.lr))
         
@@ -348,6 +357,8 @@ def main():
         logger.tb_writer.add_scalar('2_evaluating/nuc_rel_loss',np.mean(nuc_rel_loss_list),epoch)
         logger.tb_writer.add_scalar('2_evaluating/seg_loss',np.mean(seg_loss_list),epoch)
         logger.record_loss([np.mean(costs),np.mean(nuc_rel_loss_list),np.mean(seg_loss_list)],'train',epoch)
+
+        logger.save_checkpoint(network, optim, epoch)
             
         # # Perform evaluation if span accuracy is at leas 0.8 OR when dynamic oracle is activated
         # if network.metric_span.get_accuracy() < 0.8 and not config.flag_oracle:

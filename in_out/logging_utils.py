@@ -93,6 +93,8 @@ class SelfLogger(object):
 
         self.loss_txt_p = osp.join(self.model_seed_dir,'loss_log')
 
+        self.checkpoint_p = osp.join(self.model_seed_dir,'checkpoint','model.pt')
+
         print('Logger init completed')
 
 
@@ -122,3 +124,10 @@ class SelfLogger(object):
 
     def get_model_path(self,):
         return osp.join(self.model_seed_dir,'network.pt')
+
+    def save_checkpoint(self, net, optimizer, epoch):
+        torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': net.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    }, self.checkpoint_p)
