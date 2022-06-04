@@ -234,6 +234,8 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
     if config.quick_embedding != '':
         if batch_size == 1:
             token_embedding = batch[0].token_embedding
+    else:
+        token_embedding = None
 
     if batch_size == 1:
         bacthed_tokens = batch[0].tokens
@@ -258,7 +260,8 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
         gold_nuclear_relation = gold_nuclear_relation.to(device)
         gold_segmentation = gold_segmentation.to(device)
         bacthed_tokens = bacthed_tokens.to(device)
-        token_embedding = token_embedding.to(device)
+        if config.quick_embedding != '':
+            token_embedding = token_embedding.to(device)
 
     return None, None, edu_types, edu_mask, word_mask, len_edus, \
             word_denominator, None, gold_nuclear, gold_relation, gold_nuclear_relation, gold_segmentation, \
