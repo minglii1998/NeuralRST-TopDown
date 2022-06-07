@@ -36,28 +36,39 @@ class MainArchitecture(nn.Module):
         
         # num_embedding_word = vocab.word_alpha.size()
         # num_embedding_tag = vocab.tag_alpha.size()
-        num_embedding_etype = vocab.etype_alpha.size()
+        # num_embedding_etype = vocab.etype_alpha.size()
         # self.word_embedd = Embedding(num_embedding_word, config.word_dim, embedd_word)
         # self.tag_embedd = Embedding(num_embedding_tag, config.tag_dim, embedd_tag)
-        self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
+        # self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
         
         self.config = config
         self.vocab = vocab
 
-        self.dim_enc1 = config.word_dim 
-        # self.dim_enc3 = config.hidden_size * 4 + config.etype_dim
+        self.word_dim = config.word_dim
+        self.dim_enc2 = config.hidden_size * 2
 
-        self.word_sa = SelfAttention(self.dim_enc1,config.hidden_size*2)
-        self.doc_sa = DocSelfAttention(self.dim_enc1,config.hidden_size*2)
+        self.word_sa = SelfAttention(self.word_dim,config.hidden_size*2)
 
         # self.rnn_word_tag = MyLSTM(input_size=dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         # self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
-        # self.rnn_edu = MyLSTM(input_size=dim_enc3, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        
+        self.keep_lstm = config.keep_lstm
+        if self.keep_lstm:
+            self.rnn_edu = MyLSTM(input_size=self.dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+        else: # using doc self attention
+            self.doc_sa = DocSelfAttention(self.word_dim,config.hidden_size*2)
 
         self.dropout_in = nn.Dropout(p=config.drop_prob)
         self.dropout_out = nn.Dropout(p=config.drop_prob)
         out_dim1 = config.hidden_size * 2
-        out_dim2 = config.hidden_size * 2
+
+        self.using_etype = config.using_etype
+        if self.using_etype:
+            num_embedding_etype = vocab.etype_alpha.size()
+            self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
+            out_dim2 = config.hidden_size * 2 + config.etype_dim
+        else:
+            out_dim2 = config.hidden_size * 2
         
         self.decode_layer = config.decode_layer
         if self.decode_layer == 'lstm':
@@ -141,6 +152,13 @@ class MainArchitecture(nn.Module):
         # output = self.dropout_out(output)
         return output
 
+    def run_rnn_edu_no_etype(self, word_representation, edu_mask):
+
+        output, hn = self.rnn_edu(word_representation, edu_mask, None)
+        output = output.transpose(0,1).contiguous()
+        # output = self.dropout_out(output)
+        return output
+
     def run_rnn_segmentation(self, segmented_encoder, segment_mask):
         batch_size, edu_size, hidden_size = segmented_encoder.shape
         if self.decode_layer == 'lstm':
@@ -167,7 +185,7 @@ class MainArchitecture(nn.Module):
         if not self.quick_embedding:
             word = self.word_encoder(bacthed_tokens)
 
-        word_holder = torch.zeros((self.batch_size,self.edu_size,num_word,self.dim_enc1))
+        word_holder = torch.zeros((self.batch_size,self.edu_size,num_word,self.word_dim))
         for i in range(self.batch_size):
             pointer_v = 0
             for j in range(self.edu_size):
@@ -177,8 +195,15 @@ class MainArchitecture(nn.Module):
 
         word_weighted = self.word_sa(word_holder,word_mask).view(self.batch_size, self.edu_size, -1)
 
-        tensor = self.doc_sa.forward(word_holder, word_weighted, word_mask)
+        if self.keep_lstm:
+            tensor = self.run_rnn_edu_no_etype(word_weighted, edu_mask)
+        else:
+            tensor = self.doc_sa.forward(word_holder, word_weighted, word_mask)
+
         tensor = tensor.view(self.batch_size, self.edu_size, -1)
+        if self.using_etype:
+            etype = self.etype_embedd(input_etype)
+            tensor = torch.cat([tensor, etype], dim=-1)
 
         return tensor
 

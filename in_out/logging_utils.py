@@ -33,6 +33,9 @@ def get_suffix_without_seed(ver, args):
             md_str += str(v)
         suffix = suffix + md_str
     
+    if args.keep_lstm:
+        suffix = suffix + 'keep_lstm'
+    
     suffix = suffix + args.special_tag
     
     if args.special_tag == 'no_record':

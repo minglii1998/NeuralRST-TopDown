@@ -166,6 +166,9 @@ def main():
     # not used in this version model
     args_parser.add_argument('--experiment', help='Name of your experiment', type=str, default='exp_try')
     args_parser.add_argument('--model_name', default='network.pt')
+    args_parser.add_argument('--milestone', type=int, nargs='+', default=[],help='Decrease learning rate at these epochs.')
+    args_parser.add_argument('--keep_lstm', type=bool, default=False, help='use lstm instead of doc sa')
+    args_parser.add_argument('--using_etype', type=bool, default=False, help='whether use etype')
 
     config = args_parser.parse_args()
     config.betas = (config.beta1, config.beta2) 

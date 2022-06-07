@@ -154,11 +154,13 @@ def main():
     args_parser.add_argument('--seed', type=int, default=999, help='random seed')
 
     args_parser.add_argument('--model', type=str, default='sa', help='what model to use, sa ori')
-    args_parser.add_argument('--special_tag', type=str, default='', help='special tag for logging')
+    args_parser.add_argument('--special_tag', type=str, default='no_record', help='special tag for logging')
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
     args_parser.add_argument('--decode_layer', type=str, default='lstm', help='segmentor type in decoder')
     args_parser.add_argument('--resume', type=str, default='', help='checkpoint path')
     args_parser.add_argument('--milestone', type=int, nargs='+', default=[],help='Decrease learning rate at these epochs.')
+    args_parser.add_argument('--keep_lstm', type=bool, default=False, help='use lstm instead of doc sa')
+    args_parser.add_argument('--using_etype', type=bool, default=False, help='whether use etype')
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')

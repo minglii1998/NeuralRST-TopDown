@@ -35,16 +35,17 @@ class MainArchitecture(nn.Module):
 
         # num_embedding_word = vocab.word_alpha.size()
         # num_embedding_tag = vocab.tag_alpha.size()
-        num_embedding_etype = vocab.etype_alpha.size()
+        # num_embedding_etype = vocab.etype_alpha.size()
         # self.word_embedd = Embedding(num_embedding_word, config.word_dim, embedd_word)
         # self.tag_embedd = Embedding(num_embedding_tag, config.tag_dim, embedd_tag)
-        self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
+        # self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
         
         self.config = config
         self.vocab = vocab
 
         self.dim_enc1 = config.word_dim 
-        self.dim_enc3 = config.hidden_size * 2 + config.etype_dim
+        # self.dim_enc3 = config.hidden_size * 2 + config.etype_dim
+        self.dim_enc3 = config.hidden_size * 2
 
         self.rnn_word_tag = MyLSTM(input_size=self.dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         # self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
@@ -53,7 +54,14 @@ class MainArchitecture(nn.Module):
         self.dropout_in = nn.Dropout(p=config.drop_prob)
         self.dropout_out = nn.Dropout(p=config.drop_prob)
         out_dim1 = config.hidden_size * 2
-        out_dim2 = config.hidden_size * 2
+        
+        self.using_etype = config.using_etype
+        if self.using_etype:
+            num_embedding_etype = vocab.etype_alpha.size()
+            self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
+            out_dim2 = config.hidden_size * 2 + config.etype_dim
+        else:
+            out_dim2 = config.hidden_size * 2
         
         self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         self.mlp_seg = NonLinear(config.hidden_size_tagger * 2, config.hidden_size_tagger/2, activation=nn.Tanh())
@@ -119,6 +127,19 @@ class MainArchitecture(nn.Module):
         # output = self.dropout_out(output)
         return output
 
+    def run_rnn_edu_no_etype(self, word_representation, word_denominator, edu_mask):
+       
+        # apply average pooling based on EDU span
+        batch_size, edu_size, word_in_edu, hidden_size = word_representation.shape
+        word_representation = word_representation.view(batch_size * edu_size, word_in_edu, -1)
+        edu_representation1 = AvgPooling(word_representation, word_denominator.view(-1))
+        edu_representation1 = edu_representation1.view(batch_size, edu_size, -1)
+
+        output, hn = self.rnn_edu(edu_representation1, edu_mask, None)
+        output = output.transpose(0,1).contiguous()
+        # output = self.dropout_out(output)
+        return output
+
     def run_rnn_segmentation(self, segmented_encoder, segment_mask):
         batch_size, edu_size, hidden_size = segmented_encoder.shape
         output, hn = self.rnn_segmentation(segmented_encoder, segment_mask, None)
@@ -154,7 +175,11 @@ class MainArchitecture(nn.Module):
         word_holder = word_holder.transpose(0,1).contiguous()
         word_holder = word_holder.view(self.batch_size, self.edu_size, num_word, -1)
 
-        tensor = self.run_rnn_edu(word_holder, word_denominator, input_etype, edu_mask)
+        tensor = self.run_rnn_edu_no_etype(word_holder, word_denominator, edu_mask)
+
+        if self.using_etype:
+            etype = self.etype_embedd(input_etype)
+            tensor = torch.cat([tensor, etype], dim=-1)
 
         return tensor
 
