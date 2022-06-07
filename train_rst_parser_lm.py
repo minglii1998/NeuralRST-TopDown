@@ -282,7 +282,7 @@ def main():
     elif config.opt == 'adamax':
         opt_info += 'betas=%s, eps=%.1e, lr=%f' % (config.betas, config.ada_eps, config.lr)
     if len(config.milestone) > 0:
-        scheduler = optim.lr_scheduler.MultiStepLR(optim, milestones=config.milestone, gamma=0.1)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optim, milestones=config.milestone, gamma=0.1)
 
     logger.info(opt_info)
 
@@ -314,8 +314,6 @@ def main():
         start_epo = checkpoint['epoch'] + 1
     
     for epoch in range(start_epo, config.max_iter):
-        if len(config.milestone) > 0:
-            scheduler.step(epoch)
 
         logger.info('Epoch %d ' % (epoch))
         logger.info("Current learning rate: %.5f" %(config.lr))
@@ -368,6 +366,9 @@ def main():
         logger.record_loss([np.mean(costs),np.mean(nuc_rel_loss_list),np.mean(seg_loss_list)],'train',epoch)
 
         logger.save_checkpoint(network, optim, epoch)
+
+        if len(config.milestone) > 0:
+            scheduler.step()
             
         # # Perform evaluation if span accuracy is at leas 0.8 OR when dynamic oracle is activated
         # if network.metric_span.get_accuracy() < 0.8 and not config.flag_oracle:
