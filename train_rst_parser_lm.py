@@ -154,7 +154,7 @@ def main():
     args_parser.add_argument('--seed', type=int, default=999, help='random seed')
 
     args_parser.add_argument('--model', type=str, default='sa', help='what model to use, sa ori')
-    args_parser.add_argument('--special_tag', type=str, default='no_record', help='special tag for logging')
+    args_parser.add_argument('--special_tag', type=str, default='', help='special tag for logging')
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
     args_parser.add_argument('--decode_layer', type=str, default='lstm', help='segmentor type in decoder')
     args_parser.add_argument('--resume', type=str, default='', help='checkpoint path')

@@ -35,6 +35,9 @@ def get_suffix_without_seed(ver, args):
     
     if args.keep_lstm:
         suffix = suffix + 'keep_lstm'
+
+    if args.using_etype:
+        suffix = suffix + 'using_etype'
     
     suffix = suffix + args.special_tag
     
