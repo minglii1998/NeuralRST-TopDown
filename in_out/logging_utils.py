@@ -21,11 +21,17 @@ specified by different seed
 
 def get_suffix_without_seed(ver, args):
     if args.use_dynamic_oracle:
-        dynamic = '.dynamic.'
+        dynamic = '.dyn.'
     else:
-        dynamic = '.static.'
+        dynamic = '.sta.'
     suffix = ver + '.' + args.model + dynamic + 'bs.' + str(args.batch_size) + args.word_embedding + 'dim.' + str(args.word_dim) + \
-        args.decode_layer
+        args.decode_layer + '.wd.' + str(args.gamma)
+    
+    if len(args.milestone) > 0:
+        md_str = '.md'
+        for v in args.milestone:
+            md_str += str(v)
+        suffix = suffix + md_str
     
     suffix = suffix + args.special_tag
     

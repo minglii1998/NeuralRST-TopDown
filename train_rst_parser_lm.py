@@ -10,6 +10,7 @@ sys.path.append(".")
 
 import argparse
 import torch
+import torch.nn as nn
 from torch.optim import Adam, SGD, Adamax
 from torch.nn.utils import clip_grad_norm_
 
@@ -157,6 +158,7 @@ def main():
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
     args_parser.add_argument('--decode_layer', type=str, default='lstm', help='segmentor type in decoder')
     args_parser.add_argument('--resume', type=str, default='', help='checkpoint path')
+    args_parser.add_argument('--milestone', type=int, nargs='+', default=[],help='Decrease learning rate at these epochs.')
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
@@ -277,6 +279,8 @@ def main():
         opt_info += 'momentum=%.2f' % config.momentum
     elif config.opt == 'adamax':
         opt_info += 'betas=%s, eps=%.1e, lr=%f' % (config.betas, config.ada_eps, config.lr)
+    if len(config.milestone) > 0:
+        scheduler = optim.lr_scheduler.MultiStepLR(optim, milestones=config.milestone, gamma=0.1)
 
     logger.info(opt_info)
 
@@ -308,6 +312,9 @@ def main():
         start_epo = checkpoint['epoch'] + 1
     
     for epoch in range(start_epo, config.max_iter):
+        if len(config.milestone) > 0:
+            scheduler.step(epoch)
+
         logger.info('Epoch %d ' % (epoch))
         logger.info("Current learning rate: %.5f" %(config.lr))
         
