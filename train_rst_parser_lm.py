@@ -105,7 +105,7 @@ def main():
     args_parser.add_argument('--train_path', default=main_path+'NeuralRST/rst.train312')  
     args_parser.add_argument('--test_path', default=main_path+'NeuralRST/rst.test38')  
     args_parser.add_argument('--dev_path', default=main_path+'NeuralRST/rst.dev35')  
-    args_parser.add_argument('--model_path', default=main_path+'logs_new')
+    args_parser.add_argument('--model_path', default=main_path+'logs')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
     args_parser.add_argument('--word_dim', type=int, default=768, help='768 for base, 1024 for large')
@@ -316,7 +316,7 @@ def main():
     for epoch in range(start_epo, config.max_iter):
 
         logger.info('Epoch %d ' % (epoch))
-        logger.info("Current learning rate: %.5f" %(config.lr))
+        logger.info("Current learning rate: %.5f" %(optim.param_groups[0]['lr']))
         
         if epoch == config.start_dynamic_oracle and config.use_dynamic_oracle:
             logger.info("In this epoch, dynamic oracle is activated!")

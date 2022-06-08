@@ -244,3 +244,4 @@ vis
 *.pt
 
 NeuralRST/
+acc_record.txt
