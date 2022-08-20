@@ -13,6 +13,8 @@ from models.metric import Metric
 from modules.embedding import Embedding
 from modules.layer import *
 
+device = 'cuda'
+
 class MainArchitecture(nn.Module):
     def __init__(self, vocab, config, embedd_word=None, embedd_tag=None, embedd_etype=None):
         super(MainArchitecture, self).__init__()

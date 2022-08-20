@@ -17,7 +17,7 @@ from modules.layer import *
 
 from models.sa import SelfAttention, DocSelfAttention
 
-device = 'cpu'
+device = 'cuda'
 
 class MainArchitecture(nn.Module):
     def __init__(self, vocab, config, embedd_word, embedd_tag, embedd_etype=None):
@@ -54,6 +54,7 @@ class MainArchitecture(nn.Module):
         out_dim1 = config.hidden_size * 2
         out_dim2 = config.hidden_size * 2
 
+        self.decode_layer = config.decode_layer
         if self.decode_layer == 'lstm':
             self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         elif self.decode_layer == 'none':

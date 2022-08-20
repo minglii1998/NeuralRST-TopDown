@@ -18,7 +18,7 @@ from models.config import Config
 from models.architecture import MainArchitecture
 from train_rst_parser import predict
 
-device = 'cpu'
+device = 'cuda'
 
 def main():
     args_parser = argparse.ArgumentParser()

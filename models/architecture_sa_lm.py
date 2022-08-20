@@ -43,6 +43,8 @@ class MainArchitecture(nn.Module):
         
         self.config = config
         self.vocab = vocab
+        self.no_sa = self.config.no_sa
+        # none, no_local, no_global, no_both
 
         self.word_dim = config.word_dim
         self.dim_enc2 = config.hidden_size * 2
@@ -57,6 +59,9 @@ class MainArchitecture(nn.Module):
             self.rnn_edu = MyLSTM(input_size=self.dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         else: # using doc self attention
             self.doc_sa = DocSelfAttention(self.word_dim,config.hidden_size*2)
+        
+        if self.no_sa in ['no_global','no_both']:
+            self.ws3 = nn.Linear(self.word_dim,config.hidden_size*2)
 
         self.dropout_in = nn.Dropout(p=config.drop_prob)
         self.dropout_out = nn.Dropout(p=config.drop_prob)
@@ -184,7 +189,7 @@ class MainArchitecture(nn.Module):
         self.batch_size, self.edu_size, num_word = word_mask.shape
         if not self.quick_embedding:
             word = self.word_encoder(bacthed_tokens)
-
+        
         word_holder = torch.zeros((self.batch_size,self.edu_size,num_word,self.word_dim))
         for i in range(self.batch_size):
             pointer_v = 0
@@ -193,14 +198,30 @@ class MainArchitecture(nn.Module):
                 pointer_v = pointer_v + int(word_denominator[i,j])
         word_holder = word_holder.to(device)
 
-        word_weighted = self.word_sa(word_holder,word_mask).view(self.batch_size, self.edu_size, -1)
+        if self.no_sa in ['none','no_global']:
 
-        if self.keep_lstm:
-            tensor = self.run_rnn_edu_no_etype(word_weighted, edu_mask)
-        else:
-            tensor = self.doc_sa.forward(word_holder, word_weighted, word_mask)
+            word_weighted = self.word_sa(word_holder,word_mask).view(self.batch_size, self.edu_size, -1)
 
-        tensor = tensor.view(self.batch_size, self.edu_size, -1)
+        elif self.no_sa in ['no_local','no_both']:
+            word_weighted = torch.zeros((self.batch_size,self.edu_size,self.word_dim))
+            for i in range(self.batch_size):
+                pointer_v = 0
+                for j in range(self.edu_size):
+                    word_weighted[i,j,:] = torch.mean(word[i,pointer_v:pointer_v+int(word_denominator[i,j]),:])
+                    pointer_v = pointer_v + int(word_denominator[i,j])
+            word_weighted = word_weighted.to(device)
+
+        if self.no_sa in ['none','no_local']:
+            if self.keep_lstm:
+                tensor = self.run_rnn_edu_no_etype(word_weighted, edu_mask)
+            else:
+                tensor = self.doc_sa.forward(word_holder, word_weighted, word_mask)
+
+            tensor = tensor.view(self.batch_size, self.edu_size, -1)
+
+        elif self.no_sa in ['no_global','no_both']:
+            tensor = self.ws3(word_weighted)
+
         if self.using_etype:
             etype = self.etype_embedd(input_etype)
             tensor = torch.cat([tensor, etype], dim=-1)

@@ -105,7 +105,7 @@ def main():
     args_parser.add_argument('--train_path', default=main_path+'NeuralRST/rst.train312')  
     args_parser.add_argument('--test_path', default=main_path+'NeuralRST/rst.test38')  
     args_parser.add_argument('--dev_path', default=main_path+'NeuralRST/rst.dev35')  
-    args_parser.add_argument('--model_path', default=main_path+'logs')
+    args_parser.add_argument('--model_path', default=main_path+'logs_rebuttal')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
     args_parser.add_argument('--word_dim', type=int, default=768, help='768 for base, 1024 for large')
@@ -161,6 +161,7 @@ def main():
     args_parser.add_argument('--milestone', type=int, nargs='+', default=[],help='Decrease learning rate at these epochs.')
     args_parser.add_argument('--keep_lstm', type=bool, default=False, help='use lstm instead of doc sa')
     args_parser.add_argument('--using_etype', type=bool, default=False, help='whether use etype')
+    args_parser.add_argument('--no_sa', type=str, default='no_both', help='none, no_local, no_global, no_both')
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')

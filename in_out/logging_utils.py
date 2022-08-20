@@ -39,6 +39,9 @@ def get_suffix_without_seed(ver, args):
     if args.using_etype:
         suffix = suffix + 'using_etype'
     
+    if args.no_sa != 'none':
+        suffix = suffix + args.no_sa
+    
     suffix = suffix + args.special_tag
     
     if args.special_tag == 'no_record':

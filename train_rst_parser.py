@@ -32,7 +32,7 @@ from in_out.logging_utils import SelfLogger
 
 UNK_ID=0
 main_path=''
-device = 'cpu'
+device = 'cuda'
 
 def set_label_action(dictionary, instances):
     for i in range(len(instances)):
@@ -108,7 +108,7 @@ def main():
     args_parser.add_argument('--train_syn_feat_path', default=main_path+'NeuralRST/SyntaxBiaffine/train.conll.dump.results')  
     args_parser.add_argument('--test_syn_feat_path', default=main_path+'NeuralRST/SyntaxBiaffine/test.conll.dump.results')  
     args_parser.add_argument('--dev_syn_feat_path', default=main_path+'NeuralRST/SyntaxBiaffine/dev.conll.dump.results') 
-    args_parser.add_argument('--model_path', default=main_path+'logs_new')
+    args_parser.add_argument('--model_path', default=main_path+'logs')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
     args_parser.add_argument('--word_dim', type=int, default=200, help='Dimension of word embeddings')

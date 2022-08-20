@@ -11,7 +11,7 @@ from transformers import ElectraTokenizer, ElectraModel
 from transformers import AlbertTokenizer, AlbertModel
 from transformers import RobertaTokenizer, RobertaModel
 
-device = 'cpu'
+device = 'cuda'
 
 class WordEncoder(nn.Module):
     def __init__(self, config, long_out=False):

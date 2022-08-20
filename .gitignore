@@ -234,6 +234,7 @@ venv.bak/
 # Project specific
 logs
 logs_new
+logs_rebuttal
 scripts
 # *.png
 *.jpg
@@ -245,3 +246,4 @@ vis
 
 NeuralRST/
 acc_record.txt
+cal_mean_std.py
