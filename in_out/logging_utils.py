@@ -41,6 +41,9 @@ def get_suffix_without_seed(ver, args):
     
     if args.no_sa != 'none':
         suffix = suffix + args.no_sa
+
+    if args.using_mixed:
+        suffix = suffix + args.mixed_type + str(args.extra_ffn_dim) + str(args.mix_embed_dim)
     
     suffix = suffix + args.special_tag
     

@@ -26,6 +26,9 @@ from models.config import Config
 from models.architecture_sa_lm import MainArchitecture as SAMainArchitecture
 from models.architecture_lm import MainArchitecture
 
+import warnings
+warnings.filterwarnings('ignore')
+
 
 # from torch.utils.tensorboard import SummaryWriter  
 from in_out.logging_utils import SelfLogger
@@ -35,6 +38,23 @@ UNK_ID=0
 main_path=''
 device = 'cuda'
 
+
+def check_number(dev_vec_dic_list,dev_instances):
+    # assert len(dev_vec_dic_list) == len(dev_instances)
+    for i in range(len(dev_vec_dic_list)):
+        vec_dic_i = dev_vec_dic_list[i]
+        ins_i = dev_instances[i]
+        assert len(ins_i.edus) == vec_dic_i['pred'].shape[0]
+    pass
+
+
+def get_extra_vector(data, indices):
+    subtrees = []
+    for i in indices:
+        subtrees.append(data[i])
+    return subtrees
+
+
 def set_label_action(dictionary, instances):
     for i in range(len(instances)):
         for j in range(len(instances[i].gold_actions)):
@@ -42,7 +62,7 @@ def set_label_action(dictionary, instances):
     return instances
 
 
-def predict(network, instances, vocab, config, logger):
+def predict(network, instances, vocab, config, logger, dev_vec_dic_list):
     time_start = datetime.now()
     span = Metric(); nuclear = Metric(); relation = Metric(); full = Metric() # evaluation for RST parseval
     span_ori = Metric(); nuclear_ori = Metric(); relation_ori = Metric(); full_ori = Metric() # evaluation for original parseval (recommended by Morey et al., 2017)
@@ -54,7 +74,10 @@ def predict(network, instances, vocab, config, logger):
             end_index = total_data
         indices = np.array((range(i, end_index)))
         subset_data = batch_data_variable(instances, indices, vocab, config)
-        predictions_of_subtrees_ori, prediction_of_subtrees = network.loss(subset_data, None)
+        extra_vector = None
+        if config.using_mixed:
+            extra_vector = get_extra_vector(dev_vec_dic_list, indices)
+        predictions_of_subtrees_ori, prediction_of_subtrees = network.loss(subset_data, None, extra_vector=extra_vector)
         predictions += prediction_of_subtrees
         predictions_ori += predictions_of_subtrees_ori
     for i in range(len(instances)):
@@ -76,7 +99,7 @@ def predict(network, instances, vocab, config, logger):
     return span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori
 
 
-def get_test_loss(network, instances, vocab, config):
+def get_test_loss(network, instances, vocab, config, dev_vec_dic_list):
     network.eval()
     network.training = False
 
@@ -91,7 +114,10 @@ def get_test_loss(network, instances, vocab, config):
             end_index = total_data
         indices = np.array((range(i, end_index)))
         subset_data = batch_data_variable(instances, indices, vocab, config)
-        cost, cost_val, nuc_rel_loss, seg_loss = network.loss(subset_data, None, loss_valid=True)
+        extra_vector = None
+        if config.using_mixed:
+            extra_vector = get_extra_vector(dev_vec_dic_list, indices)
+        cost, cost_val, nuc_rel_loss, seg_loss = network.loss(subset_data, None, loss_valid=True, extra_vector=extra_vector)
         costs.append(cost_val)
         nuc_rel_loss_list.append(nuc_rel_loss)
         seg_loss_list.append(seg_loss)
@@ -105,10 +131,10 @@ def main():
     args_parser.add_argument('--train_path', default=main_path+'NeuralRST/rst.train312')  
     args_parser.add_argument('--test_path', default=main_path+'NeuralRST/rst.test38')  
     args_parser.add_argument('--dev_path', default=main_path+'NeuralRST/rst.dev35')  
-    args_parser.add_argument('--model_path', default=main_path+'logs_rebuttal')
+    args_parser.add_argument('--model_path', default=main_path+'logs_mixed')
     args_parser.add_argument('--max_iter', type=int, default=1000, help='maximum epoch')
    
-    args_parser.add_argument('--word_dim', type=int, default=768, help='768 for base, 1024 for large')
+    args_parser.add_argument('--word_dim', type=int, default=1024, help='768 for base, 1024 for large')
     args_parser.add_argument('--etype_dim', type=int, default=100, help='Dimension of Etype embeddings')
     args_parser.add_argument('--freeze', default=True, help='frozen the word embedding (disable fine-tuning).')
     
@@ -153,7 +179,7 @@ def main():
     args_parser.add_argument('--elem_alpha', type=float, default=0.35, help='multiplier of loss based on number of element in a subtree')
     args_parser.add_argument('--seed', type=int, default=999, help='random seed')
 
-    args_parser.add_argument('--model', type=str, default='sa', help='what model to use, sa ori')
+    args_parser.add_argument('--model', type=str, default='ori', help='what model to use, sa ori')
     args_parser.add_argument('--special_tag', type=str, default='', help='special tag for logging')
     args_parser.add_argument('--quick_embedding', type=str, default='', help='pass of saved embeddings')
     args_parser.add_argument('--decode_layer', type=str, default='lstm', help='segmentor type in decoder')
@@ -161,7 +187,16 @@ def main():
     args_parser.add_argument('--milestone', type=int, nargs='+', default=[],help='Decrease learning rate at these epochs.')
     args_parser.add_argument('--keep_lstm', type=bool, default=False, help='use lstm instead of doc sa')
     args_parser.add_argument('--using_etype', type=bool, default=False, help='whether use etype')
-    args_parser.add_argument('--no_sa', type=str, default='no_both', help='none, no_local, no_global, no_both')
+    args_parser.add_argument('--no_sa', type=str, default='none', help='none, no_local, no_global, no_both')
+
+    # Mixed version
+    args_parser.add_argument('--using_mixed', type=str, default='', help='wether to use mixed version')
+    args_parser.add_argument('--mixed_path', type=str, default='LiMNet_rst_vec.pt', help='the path to read the NDP procesed vec')
+    args_parser.add_argument('--mixed_type', type=str, default='pred', help='type of using mixed vec')
+    # local_sentence_embedding, global_sentence_shift, mixed_sentence_embedding_1, mixed_sentence_embedding_2, pred, one_hot, embed
+    args_parser.add_argument('--extra_ffn_dim', type=int, default=0, help='0, 256, 512, 1024')
+    args_parser.add_argument('--mix_embed_dim', type=int, default=0, help='0, 256, 512, 1024')
+
 
     # not used in this language model (lm) version model
     args_parser.add_argument('--word_embedding_file', default=main_path+'NeuralRST/glove.6B.200d.txt.gz')
@@ -244,6 +279,14 @@ def main():
     else:
         test_instances = torch.load(quick_test_path)
     logger.info('Finish reading test instances')
+
+    dev_vec_dic_list, train_vec_dic_list, test_vec_dic_list = [], [], []
+    if config.using_mixed:
+        ndp_vector_list = torch.load(config.mixed_path)
+        dev_vec_dic_list, train_vec_dic_list, test_vec_dic_list = ndp_vector_list[0], ndp_vector_list[1], ndp_vector_list[2]
+        check_number(train_vec_dic_list,train_instances)
+        check_number(dev_vec_dic_list,dev_instances)
+        check_number(test_vec_dic_list,test_instances)
 
     torch.set_num_threads(4)
     if config.model == 'sa':
@@ -338,8 +381,11 @@ def main():
             indices = permutation[i: i+batch_size]
             subset_data = batch_data_variable(train_instances, indices, vocab, config)
             gold_subtrees = get_subtrees(train_instances, indices)
+            extra_vector = None
+            if config.using_mixed:
+                extra_vector = get_extra_vector(train_vec_dic_list, indices)
             
-            cost, cost_val, nuc_rel_loss, seg_loss = network.loss(subset_data, gold_subtrees, epoch=epoch)
+            cost, cost_val, nuc_rel_loss, seg_loss = network.loss(subset_data, gold_subtrees, epoch=epoch, extra_vector=extra_vector)
             costs.append(cost_val)
             nuc_rel_loss_list.append(nuc_rel_loss)
             seg_loss_list.append(seg_loss)
@@ -384,9 +430,9 @@ def main():
         torch.cuda.empty_cache()
         logger.info('Evaluate DEV:')
         span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori =\
-                predict(network, dev_instances, vocab, config, logger)
+                predict(network, dev_instances, vocab, config, logger, dev_vec_dic_list)
         
-        mean_loss, nuc_rel_loss, seg_loss = get_test_loss(network, dev_instances, vocab, config)
+        mean_loss, nuc_rel_loss, seg_loss = get_test_loss(network, dev_instances, vocab, config, dev_vec_dic_list)
         logger.tb_writer.add_scalar('2_evaluating/loss',mean_loss,epoch)
         logger.tb_writer.add_scalar('2_evaluating/nuc_rel_loss',nuc_rel_loss,epoch)
         logger.tb_writer.add_scalar('2_evaluating/seg_loss',seg_loss,epoch)
@@ -421,7 +467,7 @@ def main():
         torch.cuda.empty_cache()
         logger.info('Evaluate TEST:')
         span, nuclear, relation, full, span_ori, nuclear_ori, relation_ori, full_ori =\
-                predict(network, test_instances, vocab, config, logger)
+                predict(network, test_instances, vocab, config, logger, test_vec_dic_list)
 
         torch.cuda.empty_cache()
 

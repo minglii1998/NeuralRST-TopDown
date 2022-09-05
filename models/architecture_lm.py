@@ -39,6 +39,13 @@ class MainArchitecture(nn.Module):
         # self.word_embedd = Embedding(num_embedding_word, config.word_dim, embedd_word)
         # self.tag_embedd = Embedding(num_embedding_tag, config.tag_dim, embedd_tag)
         # self.etype_embedd = Embedding(num_embedding_etype, config.etype_dim, embedd_etype)
+
+        self.using_mixed = False
+        if config.using_mixed:
+            self.using_mixed = True
+            self.add_type = config.mixed_type
+            self.extra_ffn_dim = config.extra_ffn_dim
+            self.mix_embed_dim = config.mix_embed_dim
         
         self.config = config
         self.vocab = vocab
@@ -62,6 +69,23 @@ class MainArchitecture(nn.Module):
             out_dim2 = config.hidden_size * 2 + config.etype_dim
         else:
             out_dim2 = config.hidden_size * 2
+
+        if self.using_mixed:
+            self.mixed_embed = 0
+            if self.add_type in ['local_sentence_embedding', 'global_sentence_shift', 'mixed_sentence_embedding_1','mixed_sentence_embedding_2']:
+                self.add_dim = 1024
+            elif self.add_type in ['pred', 'one_hot']:
+                self.add_dim = 9
+            elif self.add_type in ['embed']:
+                self.add_dim = self.mix_embed_dim
+                self.mix_embedd = nn.Embedding(9, self.mix_embed_dim)
+
+            if self.extra_ffn_dim == 0:
+                out_dim2 = out_dim2 + self.add_dim
+            else:
+                out_dim2 = out_dim2 + self.add_dim
+                self.ffn = nn.Linear(out_dim2, self.extra_ffn_dim)
+                out_dim2 = self.extra_ffn_dim
         
         self.rnn_segmentation = MyLSTM(input_size=out_dim2, hidden_size=config.hidden_size_tagger, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         self.mlp_seg = NonLinear(config.hidden_size_tagger * 2, config.hidden_size_tagger/2, activation=nn.Tanh())
@@ -151,7 +175,7 @@ class MainArchitecture(nn.Module):
         sent_scores = sent_scores.clone() * segment_mask
         return sent_scores, output * segment_mask.unsqueeze(2)
 
-    def forward_all(self, bacthed_tokens, word_mask, input_etype, edu_mask, word_denominator, word):
+    def forward_all(self, bacthed_tokens, word_mask, input_etype, edu_mask, word_denominator, word, extra_vector=None):
     # def forward_all(self, input_word, input_tag, input_etype, edu_mask, word_mask, word_denominator, syntax):
         # word_tag_output = self.run_rnn_word_tag(input_word, input_tag, word_mask) # bs, edu, word, dim
         # syntax_output = self.run_rnn_syntax(syntax, word_mask) # bs, edu, word, dim
@@ -180,6 +204,26 @@ class MainArchitecture(nn.Module):
         if self.using_etype:
             etype = self.etype_embedd(input_etype)
             tensor = torch.cat([tensor, etype], dim=-1)
+
+        if self.using_mixed:
+            if self.add_type == 'one_hot':
+                extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
+                for i in range(len(idxs)):
+                    extra_v[i][idxs[i]] = 1
+                extra_v = extra_v.unsqueeze(0)
+            elif self.add_type == 'embed':
+                extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
+                extra_v = self.mix_embedd(idxs).unsqueeze(0)
+            else:
+                extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
+
+            if self.extra_ffn_dim == 0:
+                tensor = torch.cat([tensor, extra_v], dim=-1)
+            else:
+                tensor = torch.cat([tensor, extra_v], dim=-1)
+                tensor = self.ffn(self.dropout_out(tensor))
 
         return tensor
 
@@ -651,7 +695,7 @@ class MainArchitecture(nn.Module):
 
     
     # Primary function
-    def loss(self, subset_data, gold_subtrees, epoch=0, loss_valid=False):
+    def loss(self, subset_data, gold_subtrees, epoch=0, loss_valid=False, extra_vector=None):
         # subset_data = edu_words, edu_tags, edu_types, edu_mask, word_mask, len_edus, word_denominator, edu_syntax,
         # gold_nuclear, gold_relation, gold_segmentation, span, len_golds, depth
         self.epoch = epoch
@@ -660,7 +704,7 @@ class MainArchitecture(nn.Module):
         _, _, etypes, edu_mask, word_mask, len_edus, word_denominator, _, gold_nuclear, gold_relation, \
             gold_nuclear_relation, gold_segmentation, span, len_golds, depth, bacthed_tokens, token_embedding = subset_data
         # print('subset_data',subset_data)
-        encoder_output = self.forward_all(bacthed_tokens, word_mask, etypes, edu_mask, word_denominator, token_embedding)
+        encoder_output = self.forward_all(bacthed_tokens, word_mask, etypes, edu_mask, word_denominator, token_embedding, extra_vector)
         if self.training:
             if self.config.flag_oracle:
                 cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
