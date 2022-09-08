@@ -47,6 +47,16 @@ class MainArchitecture(nn.Module):
             self.add_type = config.mixed_type
             self.extra_ffn_dim = config.extra_ffn_dim
             self.mix_embed_dim = config.mix_embed_dim
+            self.mixed_where = config.mixed_where
+
+        if self.using_mixed:
+            if self.add_type in ['local_sentence_embedding', 'global_sentence_shift', 'mixed_sentence_embedding_1','mixed_sentence_embedding_2']:
+                self.add_dim = 1024
+            elif self.add_type in ['pred', 'one_hot']:
+                self.add_dim = 9
+            elif self.add_type in ['embed']:
+                self.add_dim = self.mix_embed_dim
+                self.mix_embedd = nn.Embedding(9, self.mix_embed_dim)
         
         self.config = config
         self.vocab = vocab
@@ -61,9 +71,19 @@ class MainArchitecture(nn.Module):
         # self.rnn_word_tag = MyLSTM(input_size=dim_enc1, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         # self.rnn_syntax = MyLSTM(input_size=dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         
+        lstm_input_dim = self.word_dim
+        if self.using_mixed:
+            if self.mixed_where == 'before_docsa':
+                if self.extra_ffn_dim == 0:
+                    lstm_input_dim = lstm_input_dim + self.add_dim
+                else:
+                    lstm_input_dim = lstm_input_dim + self.add_dim
+                    self.ffn = nn.Linear(lstm_input_dim, self.extra_ffn_dim)
+                    lstm_input_dim = self.extra_ffn_dim
+
         self.keep_lstm = config.keep_lstm
         if self.keep_lstm:
-            self.rnn_edu = MyLSTM(input_size=self.dim_enc2, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
+            self.rnn_edu = MyLSTM(input_size=lstm_input_dim, hidden_size=config.hidden_size, num_layers=config.num_layers, batch_first=True, bidirectional=True, dropout_in=config.drop_prob, dropout_out=config.drop_prob)
         else: # using doc self attention
             self.doc_sa = DocSelfAttention(self.word_dim,config.hidden_size*2)
         
@@ -83,21 +103,13 @@ class MainArchitecture(nn.Module):
             out_dim2 = config.hidden_size * 2
 
         if self.using_mixed:
-            self.mixed_embed = 0
-            if self.add_type in ['local_sentence_embedding', 'global_sentence_shift', 'mixed_sentence_embedding_1','mixed_sentence_embedding_2']:
-                self.add_dim = 1024
-            elif self.add_type in ['pred', 'one_hot']:
-                self.add_dim = 9
-            elif self.add_type in ['embed']:
-                self.add_dim = self.mix_embed_dim
-                self.mix_embedd = nn.Embedding(9, self.mix_embed_dim)
-
-            if self.extra_ffn_dim == 0:
-                out_dim2 = out_dim2 + self.add_dim
-            else:
-                out_dim2 = out_dim2 + self.add_dim
-                self.ffn = nn.Linear(out_dim2, self.extra_ffn_dim)
-                out_dim2 = self.extra_ffn_dim
+            if self.mixed_where == 'before_seg':
+                if self.extra_ffn_dim == 0:
+                    out_dim2 = out_dim2 + self.add_dim
+                else:
+                    out_dim2 = out_dim2 + self.add_dim
+                    self.ffn = nn.Linear(out_dim2, self.extra_ffn_dim)
+                    out_dim2 = self.extra_ffn_dim
         
         self.decode_layer = config.decode_layer
         if self.decode_layer == 'lstm':
@@ -235,6 +247,27 @@ class MainArchitecture(nn.Module):
                     pointer_v = pointer_v + int(word_denominator[i,j])
             word_weighted = word_weighted.to(device)
 
+        if self.using_mixed:
+            if self.mixed_where == 'before_docsa':
+                if self.add_type == 'one_hot':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
+                    for i in range(len(idxs)):
+                        extra_v[i][idxs[i]] = 1
+                    extra_v = extra_v.unsqueeze(0)
+                elif self.add_type == 'embed':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
+                    extra_v = self.mix_embedd(idxs).unsqueeze(0)
+                else:
+                    extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
+
+                if self.extra_ffn_dim == 0:
+                    word_weighted = torch.cat([word_weighted, extra_v], dim=-1)
+                else:
+                    word_weighted = torch.cat([word_weighted, extra_v], dim=-1)
+                    word_weighted = self.ffn(self.dropout_out(word_weighted))
+
         if self.no_sa in ['none','no_local']:
             if self.keep_lstm:
                 tensor = self.run_rnn_edu_no_etype(word_weighted, edu_mask)
@@ -251,24 +284,25 @@ class MainArchitecture(nn.Module):
             tensor = torch.cat([tensor, etype], dim=-1)
         
         if self.using_mixed:
-            if self.add_type == 'one_hot':
-                extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
-                idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
-                for i in range(len(idxs)):
-                    extra_v[i][idxs[i]] = 1
-                extra_v = extra_v.unsqueeze(0)
-            elif self.add_type == 'embed':
-                extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
-                idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
-                extra_v = self.mix_embedd(idxs).unsqueeze(0)
-            else:
-                extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
+            if self.mixed_where == 'before_seg':
+                if self.add_type == 'one_hot':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
+                    for i in range(len(idxs)):
+                        extra_v[i][idxs[i]] = 1
+                    extra_v = extra_v.unsqueeze(0)
+                elif self.add_type == 'embed':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
+                    extra_v = self.mix_embedd(idxs).unsqueeze(0)
+                else:
+                    extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
 
-            if self.extra_ffn_dim == 0:
-                tensor = torch.cat([tensor, extra_v], dim=-1)
-            else:
-                tensor = torch.cat([tensor, extra_v], dim=-1)
-                tensor = self.ffn(self.dropout_out(tensor))
+                if self.extra_ffn_dim == 0:
+                    tensor = torch.cat([tensor, extra_v], dim=-1)
+                else:
+                    tensor = torch.cat([tensor, extra_v], dim=-1)
+                    tensor = self.ffn(self.dropout_out(tensor))
 
         return tensor
 
