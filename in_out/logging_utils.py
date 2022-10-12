@@ -46,6 +46,10 @@ def get_suffix_without_seed(ver, args):
         suffix = suffix + args.mixed_type + str(args.extra_ffn_dim) + str(args.mix_embed_dim)
         if args.mixed_where == 'before_docsa':
             suffix = suffix + 'bsa'
+        if args.mixed_where == 'in_seg':
+            suffix = suffix + 'ins'
+        if args.mixed_where == 'in_seg2':
+            suffix = suffix + 'ins2'
     
     suffix = suffix + args.special_tag
     

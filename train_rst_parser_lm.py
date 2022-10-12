@@ -192,8 +192,9 @@ def main():
     # Mixed version
     args_parser.add_argument('--using_mixed', type=str, default='', help='wether to use mixed version')
     args_parser.add_argument('--mixed_path', type=str, default='LiMNet_rst_vec.pt', help='the path to read the NDP procesed vec')
-    args_parser.add_argument('--mixed_where', type=str, default='before_seg', help='where to use mixed vec')
-    # before_seg, before_docsa // before_docsa only used in keep_lstm version
+    args_parser.add_argument('--mixed_where', type=str, default='in_seg', help='where to use mixed vec')
+    # before_seg, before_docsa, in_seg: avg, in_seg2: adjacent // before_docsa only used in keep_lstm version
+    # in_seg and in_seg2 version, ffn should be after avg pooling
     args_parser.add_argument('--mixed_type', type=str, default='pred', help='type of using mixed vec')
     # local_sentence_embedding, global_sentence_shift, mixed_sentence_embedding_1, mixed_sentence_embedding_2, pred, one_hot, embed
     args_parser.add_argument('--extra_ffn_dim', type=int, default=0, help='0, 256, 512, 1024')

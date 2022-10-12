@@ -10,6 +10,8 @@ from in_out.util import lower_with_digit_transform
 from transition.state import CState
 from torch.autograd import Variable
 
+torch.set_printoptions(threshold=np.inf)
+
 device = 'cuda'
 
 def construct_embedding_table(alpha, hidden_size, freeze, pretrained_embed = None):
@@ -226,6 +228,9 @@ def batch_data_variable(data, indices, vocab, config, is_training=True):
                 gold_nuclear_relation[idx, idy] = vocab.nuclear_relation_alpha.word2id(batch[idx].gold_top_down.nuclear_relation[idy])
                 index_gold = cut_index - batch[idx].gold_top_down.edu_span[idy][0]
                 gold_segmentation[idx, idy, index_gold] = 1
+                # print('gold_segmentation',gold_segmentation)
+                # print('cut_index',cut_index,'index_gold',index_gold)
+                pass
             gold_span.append(batch[idx].gold_top_down.edu_span)
             gold_depth.append(batch[idx].gold_top_down.depth)
             

@@ -19,6 +19,8 @@ from modules.layer import *
 from models.sa_lm import SelfAttention, DocSelfAttention
 from models.WordEncoder_lm import WordEncoder
 
+torch.set_printoptions(threshold=np.inf)
+
 device = 'cuda'
 
 class MainArchitecture(nn.Module):
@@ -127,8 +129,18 @@ class MainArchitecture(nn.Module):
             self.transformer_segmentation = TransformerEncoder(context_encoders, 1)
 
         self.mlp_seg = NonLinear(config.hidden_size_tagger * 2, config.hidden_size_tagger/2, activation=nn.Tanh())
+
+        temp_input = config.hidden_size_tagger * 4 
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                if self.extra_ffn_dim == 0:
+                    temp_input = temp_input + self.add_dim * 2
+                else:
+                    temp_input = temp_input + self.add_dim * 2 
+                    self.ffn = nn.Linear(temp_input, self.extra_ffn_dim * 2)
+                    temp_input = self.extra_ffn_dim * 2
         
-        self.mlp_nuclear_relation = NonLinear(config.hidden_size_tagger * 4, config.hidden_size, activation=nn.Tanh())
+        self.mlp_nuclear_relation = NonLinear(temp_input, config.hidden_size, activation=nn.Tanh())
         self.output_nuclear_relation = nn.Linear(config.hidden_size, vocab.nuclear_relation_alpha.size())
 
         self.metric_span = Metric()
@@ -456,7 +468,7 @@ class MainArchitecture(nn.Module):
         stack_state = stack_state.view(batch_size, edu_num, hidden)
         return stack_state, segment_mask
 
-    def prepare_prediction_for_testing(self, encoder_output, cur_span_pairs):
+    def prepare_prediction_for_testing(self, encoder_output, cur_span_pairs, extra_vector):
         batch_size, edu_num, hidden = encoder_output.shape
         bucket = Variable(torch.zeros(batch_size, 1, hidden)).type(torch.FloatTensor)
         if self.config.use_gpu:
@@ -498,27 +510,83 @@ class MainArchitecture(nn.Module):
         except:
             import ipdb; ipdb.set_trace()
         stack_state = stack_state.view(batch_size * 2, edu_num, hidden)
+
+        if self.using_mixed:
+            if self.mixed_where == 'in_seg2':
+                temp_stack = torch.sum(stack_state,-1)
+                temp_none_zero = torch.nonzero(temp_stack)
+                temp_none_zero_list = [[] for i in range(batch_size * 2)]
+                for i in range(temp_none_zero.shape[0]):
+                    temp_none_zero_list[temp_none_zero[i][0]].append(int(temp_none_zero[i][1]))
+                selected_temp_none_zero_list = [[] for i in range(batch_size * 2)]
+                for i in range(len(temp_none_zero_list)):
+                    if i % 2 == 0:
+                        selected_temp_none_zero_list[i].append(temp_none_zero_list[i][0])
+                    elif i % 2 == 1:
+                        selected_temp_none_zero_list[i].append(temp_none_zero_list[i][-1])
+                temp_vec_list = []
+                for i in range(batch_size * 2):
+                    temp_vec_list.append(stack_state[i,selected_temp_none_zero_list[i],-self.add_dim:])
+                temp_extra_v = torch.cat(temp_vec_list,0)
+
         stack_state = AvgPooling(stack_state, stack_denominator)
+        if self.using_mixed:
+            if self.mixed_where == 'in_seg2':
+                stack_state = stack_state[:,0:-self.add_dim]
+                stack_state = torch.cat((stack_state,temp_extra_v),-1)
+
         stack_state = stack_state.view(batch_size, -1)
         return stack_state
 
-    def decode_testing(self, encoder_output, span):
+    def decode_testing(self, encoder_output, span, extra_vector):
         batch_size, edu_size, hidden_size = encoder_output.shape
         span_initial = self.get_initial_span(span, batch_size) #act as queue
         for idx in range(batch_size):
             self.index_output[idx]=[]
+
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                if self.add_type == 'one_hot':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
+                    for i in range(len(idxs)):
+                        extra_v[i][idxs[i]] = 1
+                    extra_v = extra_v.unsqueeze(0)
+                elif self.add_type == 'embed':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
+                    extra_v = self.mix_embedd(idxs).unsqueeze(0)
+                else:
+                    extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
+
+                encoder_output = torch.cat((encoder_output,extra_v),-1)
 
         self.all_span_output = copy.deepcopy(span_initial)
         all_segment_output = []
         all_segment_mask = []
         all_nuclear_relation_output = []
         while (self.not_finished(span_initial, batch_size)):
+
             hidden_state1, segment_mask = self.prepare_segmentation_for_testing(encoder_output, span_initial)
+
+            if self.using_mixed:
+                if self.mixed_where in ['in_seg','in_seg2']:
+                    extra_v_ = hidden_state1[:,:,-self.add_dim:]
+                    hidden_state1 = hidden_state1[:,:,:-self.add_dim]
             
             segment_output, rnn_output = self.run_rnn_segmentation(hidden_state1, segment_mask) #output in cuda-2
             cur_span_pairs, span_initial = self.update_span(segment_output, segment_mask, span_initial)
 
-            hidden_state2 = self.prepare_prediction_for_testing(rnn_output, cur_span_pairs)
+            if self.using_mixed:
+                if self.mixed_where in ['in_seg','in_seg2']:
+                    rnn_output = torch.cat((rnn_output,extra_v_),-1)
+
+            hidden_state2 = self.prepare_prediction_for_testing(rnn_output, cur_span_pairs,extra_vector)
+
+            if self.using_mixed:
+                if self.mixed_where in ['in_seg','in_seg2']:
+                    if self.extra_ffn_dim != 0:
+                        hidden_state2 = self.ffn(self.dropout_out(hidden_state2))
             nuclear_relation_output = self.output_nuclear_relation(self.mlp_nuclear_relation(hidden_state2))
 
             all_segment_output.append(segment_output.view(batch_size, 1, -1))
@@ -534,7 +602,7 @@ class MainArchitecture(nn.Module):
 
     # --------------------------------------------------------------------------------------
     # Functions for training with static oracle (normal training) start from here
-    def prepare_prediction_for_training(self, encoder_output, segment_mask, gold_segmentation):
+    def prepare_prediction_for_training(self, encoder_output, segment_mask, gold_segmentation, extra_vector):
         batch_size, edu_num, hidden = encoder_output.shape
         bucket = Variable(torch.zeros(batch_size, 1, hidden)).type(torch.FloatTensor)
         if self.config.use_gpu:
@@ -567,6 +635,17 @@ class MainArchitecture(nn.Module):
             for j in range(l2):
                 stack_index[edu_num * 1 + stack_offset + j] = value_offset + s2[0] + j
             stack_denominator [denominator_offset + 1] = l2
+
+            # print('stack_index',stack_index)
+            # print('stack_index[:edu_rep.shape[0]]',stack_index[:edu_rep.shape[0]])
+            # temp = stack_index.view(batch_size * 2, edu_num)
+            # for i in range(batch_size * 2):
+            #     temp[i] = temp[i] % (edu_num+1)
+
+            # # print('stack_index.view(batch_size * 2, edu_num)',temp)
+            # print('stack_index.view(batch_size*2, -1)',temp.view(batch_size*2, -1))
+            # print('gold_index',gold_index)
+            # pass
         
         if self.config.use_gpu:
             stack_index = stack_index.to(device)
@@ -578,7 +657,31 @@ class MainArchitecture(nn.Module):
         #     import ipdb; ipdb.set_trace()
         stack_state = torch.index_select(edu_rep, 0, stack_index)
         stack_state = stack_state.view(batch_size * 2, edu_num, hidden)
+
+        if self.using_mixed:
+            if self.mixed_where == 'in_seg2':
+                temp_stack = torch.sum(stack_state,-1)
+                temp_none_zero = torch.nonzero(temp_stack)
+                temp_none_zero_list = [[] for i in range(batch_size * 2)]
+                for i in range(temp_none_zero.shape[0]):
+                    temp_none_zero_list[temp_none_zero[i][0]].append(int(temp_none_zero[i][1]))
+                selected_temp_none_zero_list = [[] for i in range(batch_size * 2)]
+                for i in range(len(temp_none_zero_list)):
+                    if i % 2 == 0:
+                        selected_temp_none_zero_list[i].append(temp_none_zero_list[i][0])
+                    elif i % 2 == 1:
+                        selected_temp_none_zero_list[i].append(temp_none_zero_list[i][-1])
+                temp_vec_list = []
+                for i in range(batch_size * 2):
+                    temp_vec_list.append(stack_state[i,selected_temp_none_zero_list[i],-self.add_dim:])
+                temp_extra_v = torch.cat(temp_vec_list,0)
+
         stack_state = AvgPooling(stack_state, stack_denominator)
+        if self.using_mixed:
+            if self.mixed_where == 'in_seg2':
+                stack_state = stack_state[:,0:-self.add_dim]
+                stack_state = torch.cat((stack_state,temp_extra_v),-1)
+
         stack_state = stack_state.view(batch_size, -1)
         return stack_state
 
@@ -610,6 +713,9 @@ class MainArchitecture(nn.Module):
             stack_index = stack_index.to(device)
             segment_mask = segment_mask.to(device)
 
+        # print('segment_mask',segment_mask)
+        # print('stack_index',stack_index.view(edu_num-1,-1))
+
         stack_state = torch.index_select(edu_rep, 0, stack_index)
         stack_state = stack_state.view(batch_size * (edu_num-1), edu_num, hidden)
         segment_mask = segment_mask.view(batch_size * (edu_num-1), edu_num)
@@ -629,15 +735,46 @@ class MainArchitecture(nn.Module):
                 self.index_output[idx].append(int(out))
 
     # Gather all of span possibilities during training, avoid the loop
-    def decode_training(self, encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth):
+    def decode_training(self, encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth, extra_vector):
         batch_size, edu_size, hidden_size = encoder_output.shape
         for idx in range(batch_size):
             self.index_output[idx]=[]
         
-        all_hidden_states1, segment_masks = self.prepare_segmentation_for_training(encoder_output, span)
-        segment_outputs, rnn_outputs = self.run_rnn_segmentation(all_hidden_states1, segment_masks)
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                if self.add_type == 'one_hot':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1)
+                    for i in range(len(idxs)):
+                        extra_v[i][idxs[i]] = 1
+                    extra_v = extra_v.unsqueeze(0)
+                elif self.add_type == 'embed':
+                    extra_v = torch.zeros_like(extra_vector[0]['pred']).to(device)
+                    idxs = torch.argmax(extra_vector[0]['pred'],dim=1).to(device)
+                    extra_v = self.mix_embedd(idxs).unsqueeze(0)
+                else:
+                    extra_v = extra_vector[0][self.add_type].to(device).unsqueeze(0)
+                
+                encoder_output = torch.cat((encoder_output,extra_v),-1)
         
-        all_hidden_states2 = self.prepare_prediction_for_training(rnn_outputs, segment_masks, gold_segmentation)
+        all_hidden_states1, segment_masks = self.prepare_segmentation_for_training(encoder_output, span)
+        # edu_size-1, edu_size, dim / edu_size-1, edu_size
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                extra_v = all_hidden_states1[:,:,-self.add_dim:]
+                all_hidden_states1 = all_hidden_states1[:,:,:-self.add_dim]
+        segment_outputs, rnn_outputs = self.run_rnn_segmentation(all_hidden_states1, segment_masks)
+        # edu_size-1, edu_size / edu_size-1, edu_size, dim
+
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                rnn_outputs = torch.cat((rnn_outputs,extra_v),-1)
+        all_hidden_states2 = self.prepare_prediction_for_training(rnn_outputs, segment_masks, gold_segmentation, extra_vector)
+        # edu_size-1, dim
+        if self.using_mixed:
+            if self.mixed_where in ['in_seg','in_seg2']:
+                if self.extra_ffn_dim != 0:
+                    all_hidden_states2 = self.ffn(self.dropout_out(all_hidden_states2))
         nuclear_relation_outputs = self.output_nuclear_relation(self.mlp_nuclear_relation(all_hidden_states2))
         
         #obtain segmented_index prediction
@@ -788,18 +925,18 @@ class MainArchitecture(nn.Module):
             if self.config.flag_oracle:
                 cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
             else:
-                cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth, extra_vector)
             return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
         else:
             if loss_valid :
                 if self.config.flag_oracle:
                     cost, nuc_rel_loss, seg_loss = self.decode_training_dynamic_oracle(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
                 else:
-                    cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth)
+                    cost, nuc_rel_loss, seg_loss = self.decode_training(encoder_output, gold_nuclear_relation, gold_segmentation, span, len_golds, depth, extra_vector)
                 return cost, cost.item(), nuc_rel_loss.item(), seg_loss.item()
                 
             if self.config.beam_search == 1:
-                gs, results = self.decode_testing(encoder_output, span)
+                gs, results = self.decode_testing(encoder_output, span, extra_vector)
             else: #do beam search
                 # not supported yet
                 raise NotImplementedError('Beam search has not been implemented')

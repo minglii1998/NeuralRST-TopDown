@@ -246,3 +246,4 @@ vis
 NeuralRST/
 acc_record.txt
 cal_mean_std.py
+delete_pt.py
